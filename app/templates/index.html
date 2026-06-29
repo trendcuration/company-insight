@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Company Insight — 기업인사이트</title>
+  <link rel="stylesheet" href="/static/css/style.css" />
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <span class="logo">📊 Company Insight</span>
+      <span class="tagline">기업 분석 리포트 생성기</span>
+    </div>
+  </header>
+
+  <main class="main-content">
+    <section class="hero">
+      <h1>기업명을 입력하면<br>인포그래픽 리포트를 생성합니다</h1>
+      <p class="hero-sub">DART 공시 + 네이버 금융 데이터 기반 · 1200×1600px PNG</p>
+    </section>
+
+    <section class="search-section">
+      <form id="search-form" autocomplete="off">
+        <div class="input-wrap">
+          <input
+            type="text"
+            id="company-input"
+            placeholder="예: 삼성전자, 카카오, LG에너지솔루션"
+            required
+            maxlength="40"
+          />
+          <button type="submit" id="submit-btn">리포트 생성</button>
+        </div>
+      </form>
+    </section>
+
+    <div id="loading" class="loading hidden">
+      <div class="spinner"></div>
+      <p>분석 중입니다… DART와 네이버 금융 데이터를 수집 중입니다</p>
+    </div>
+
+    <div id="error-box" class="error-box hidden">
+      <span class="error-icon">⚠️</span>
+      <span id="error-msg"></span>
+    </div>
+
+    <section id="result-section" class="result-section hidden">
+      <div class="result-header">
+        <span id="result-title"></span>
+        <a id="download-btn" class="download-btn" download>⬇ 이미지 다운로드</a>
+      </div>
+      <div class="result-img-wrap">
+        <img id="result-img" src="" alt="기업 인포그래픽 리포트" />
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <p>Company Insight by <strong>TRENQURA</strong> · <a href="https://issuepicki.com" target="_blank" rel="noopener">issuepicki.com</a></p>
+    <p class="footer-sub">데이터 출처: DART Open API, 네이버 금융 · 투자 판단의 책임은 본인에게 있습니다</p>
+  </footer>
+
+  <script src="/static/js/app.js"></script>
+</body>
+</html>
