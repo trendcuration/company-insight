@@ -1,0 +1,8 @@
+__pycache__/
+*.py[cod]
+*.pyo
+.env
+data/CORPCODE.xml
+data/CORPCODE.zip
+*.png
+.DS_Store
