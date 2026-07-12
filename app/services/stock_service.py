@@ -1,4 +1,5 @@
 from __future__ import annotations
+import html as html_mod
 import re
 from typing import Optional
 from urllib.parse import quote
@@ -6,7 +7,7 @@ from urllib.parse import quote
 import httpx
 from bs4 import BeautifulSoup
 
-from app.models.report import Consensus, StockInfo
+from app.models.report import Consensus, NewsItem, StockInfo
 
 HEADERS = {
     "User-Agent": (
@@ -315,3 +316,94 @@ async def get_consensus(stock_code: str) -> Optional[Consensus]:
         if con:
             return con
     return None
+
+
+def _clean_title(raw: str) -> str:
+    return html_mod.unescape(re.sub(r"<[^>]+>", "", raw or "")).strip()
+
+
+def _fmt_news_date(dt: str) -> Optional[str]:
+    digits = re.sub(r"[^\d]", "", dt or "")
+    if len(digits) >= 8:
+        return f"{digits[0:4]}.{digits[4:6]}.{digits[6:8]}"
+    return None
+
+
+async def get_news(stock_code: str, limit: int = 5) -> List[NewsItem]:
+    """종목 관련 최근 뉴스 헤드라인 (제목·언론사·날짜·링크)."""
+    # 1차: 네이버 모바일 뉴스 API — 응답 구조 변화에 대비해 관대하게 탐색
+    try:
+        data = await _get_json(
+            f"https://m.stock.naver.com/api/news/stock/{stock_code}?pageSize={limit}&page=1"
+        )
+        found: List[dict] = []
+
+        def walk(obj):
+            if isinstance(obj, dict):
+                if obj.get("title") and (obj.get("officeName") or obj.get("officeId")):
+                    found.append(obj)
+                else:
+                    for v in obj.values():
+                        walk(v)
+            elif isinstance(obj, list):
+                for v in obj:
+                    walk(v)
+
+        walk(data)
+        items: List[NewsItem] = []
+        seen = set()
+        for raw in found:
+            title = _clean_title(str(raw.get("title", "")))
+            if not title or title in seen:
+                continue
+            seen.add(title)
+            url = None
+            office_id = str(raw.get("officeId", "")).strip()
+            article_id = str(raw.get("articleId", "")).strip()
+            if office_id and article_id:
+                url = f"https://n.news.naver.com/article/{office_id}/{article_id}"
+            items.append(NewsItem(
+                title=title,
+                press=str(raw.get("officeName", "")).strip() or None,
+                date=_fmt_news_date(str(raw.get("datetime", ""))),
+                url=url,
+            ))
+            if len(items) >= limit:
+                break
+        if items:
+            return items
+    except Exception:
+        pass
+
+    # 2차: 데스크톱 종목 뉴스 페이지 스크래핑
+    try:
+        soup = await _get(
+            f"https://finance.naver.com/item/news_news.naver?code={stock_code}&page=1"
+        )
+        if not soup:
+            return []
+        items = []
+        seen = set()
+        for row in soup.select("table.type5 tr"):
+            a = row.select_one("td.title a, a.tit")
+            if not a:
+                continue
+            title = _clean_title(a.get_text())
+            if not title or title in seen:
+                continue
+            seen.add(title)
+            info = row.select_one("td.info")
+            date_td = row.select_one("td.date")
+            href = a.get("href", "")
+            url = f"https://finance.naver.com{href}" if href.startswith("/") else (href or None)
+            items.append(NewsItem(
+                title=title,
+                press=info.get_text(strip=True) if info else None,
+                date=_fmt_news_date(date_td.get_text(strip=True)) if date_td else None,
+                url=url,
+            ))
+            if len(items) >= limit:
+                break
+        return items
+    except Exception:
+        return []

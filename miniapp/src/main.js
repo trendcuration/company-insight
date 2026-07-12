@@ -199,6 +199,25 @@ function renderReport(data) {
     `);
   }
 
+  // 주요 뉴스
+  if (data.news && data.news.length) {
+    const newsRows = data.news.map((n) => {
+      const meta = [n.press, n.date].filter(Boolean).join(' · ');
+      const inner = `
+        <div class="rp-news-title">${esc(n.title)}</div>
+        ${meta ? `<div class="rp-news-meta">${esc(meta)}</div>` : ''}`;
+      return n.url
+        ? `<a class="rp-news-item" href="${esc(n.url)}" target="_blank" rel="noopener">${inner}</a>`
+        : `<div class="rp-news-item">${inner}</div>`;
+    }).join('');
+    parts.push(`
+      <div class="rp-card">
+        <div class="rp-label">주요 뉴스</div>
+        <div class="rp-news">${newsRows}</div>
+      </div>
+    `);
+  }
+
   if (parts.length <= 1) {
     parts.push(`<div class="rp-card"><div class="rp-meta">수집된 데이터가 없습니다.</div></div>`);
   }

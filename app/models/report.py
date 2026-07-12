@@ -43,6 +43,13 @@ class Consensus(BaseModel):
     sell_count: Optional[int] = None
 
 
+class NewsItem(BaseModel):
+    title: str
+    press: Optional[str] = None
+    date: Optional[str] = None
+    url: Optional[str] = None
+
+
 class CompanyReport(BaseModel):
     company_name: str
     stock_code: Optional[str] = None
@@ -51,3 +58,4 @@ class CompanyReport(BaseModel):
     financials: List[FinancialYear] = []
     dividend: Optional[DividendInfo] = None
     consensus: Optional[Consensus] = None
+    news: List[NewsItem] = []

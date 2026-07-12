@@ -1,6 +1,7 @@
 from __future__ import annotations
 import io
 import os
+from datetime import date
 import zipfile
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -75,27 +76,30 @@ async def get_financial_data(corp_code: str) -> List[FinancialYear]:
         return []
     try:
         async with httpx.AsyncClient(timeout=20) as client:
-            # Single call with bsns_year=2024 returns thstrm(2024)/frmtrm(2023)/bfefrmtrm(2022)
-            for fs_div in ("CFS", "OFS"):
-                params = {
-                    "crtfc_key": api_key,
-                    "corp_code": corp_code,
-                    "bsns_year": "2024",
-                    "reprt_code": "11011",
-                    "fs_div": fs_div,
-                }
-                resp = await client.get(f"{DART_BASE}/fnlttSinglAcnt.json", params=params)
-                data = resp.json()
-                if data.get("status") == "000" and data.get("list"):
-                    result = _parse_three_years(data["list"])
-                    if result:
-                        return result
+            # 사업보고서(11011) 1건이 3개년(thstrm/frmtrm/bfefrmtrm)을 담는다.
+            # 최신 연도(작년) 보고서가 아직 미공시면 그 전 연도로 폴백.
+            this_year = date.today().year
+            for bsns_year in (this_year - 1, this_year - 2):
+                for fs_div in ("CFS", "OFS"):
+                    params = {
+                        "crtfc_key": api_key,
+                        "corp_code": corp_code,
+                        "bsns_year": str(bsns_year),
+                        "reprt_code": "11011",
+                        "fs_div": fs_div,
+                    }
+                    resp = await client.get(f"{DART_BASE}/fnlttSinglAcnt.json", params=params)
+                    data = resp.json()
+                    if data.get("status") == "000" and data.get("list"):
+                        result = _parse_three_years(data["list"], bsns_year)
+                        if result:
+                            return result
     except Exception:
         pass
     return []
 
 
-def _parse_three_years(rows: list) -> List[FinancialYear]:
+def _parse_three_years(rows: list, base_year: int) -> List[FinancialYear]:
     # 손익계산서 행만, 계정명 기준 매칭. 같은 계정명이 연결/포괄 등으로
     # 중복될 수 있어 첫 번째(정렬 우선) 행을 사용한다.
     # 손익계산서(IS/CIS)와 재무상태표(BS) 계정을 모두 수집한다.
@@ -119,7 +123,7 @@ def _parse_three_years(rows: list) -> List[FinancialYear]:
 
     years = [
         FinancialYear(
-            year=2024,
+            year=base_year,
             revenue=_val(ACCOUNT_NAMES["revenue"], "thstrm_amount"),
             operating_income=_val(ACCOUNT_NAMES["operating_income"], "thstrm_amount"),
             net_income=_val(ACCOUNT_NAMES["net_income"], "thstrm_amount"),
@@ -128,7 +132,7 @@ def _parse_three_years(rows: list) -> List[FinancialYear]:
             total_equity=_val(ACCOUNT_NAMES["total_equity"], "thstrm_amount"),
         ),
         FinancialYear(
-            year=2023,
+            year=base_year - 1,
             revenue=_val(ACCOUNT_NAMES["revenue"], "frmtrm_amount"),
             operating_income=_val(ACCOUNT_NAMES["operating_income"], "frmtrm_amount"),
             net_income=_val(ACCOUNT_NAMES["net_income"], "frmtrm_amount"),
@@ -137,7 +141,7 @@ def _parse_three_years(rows: list) -> List[FinancialYear]:
             total_equity=_val(ACCOUNT_NAMES["total_equity"], "frmtrm_amount"),
         ),
         FinancialYear(
-            year=2022,
+            year=base_year - 2,
             revenue=_val(ACCOUNT_NAMES["revenue"], "bfefrmtrm_amount"),
             operating_income=_val(ACCOUNT_NAMES["operating_income"], "bfefrmtrm_amount"),
             net_income=_val(ACCOUNT_NAMES["net_income"], "bfefrmtrm_amount"),
@@ -156,12 +160,17 @@ async def get_dividend_info(corp_code: str) -> Optional[DividendInfo]:
         return None
     try:
         async with httpx.AsyncClient(timeout=15) as client:
-            resp = await client.get(
-                f"{DART_BASE}/alotMatter.json",
-                params={"crtfc_key": api_key, "corp_code": corp_code, "bsns_year": "2024", "reprt_code": "11011"},
-            )
-        data = resp.json()
-        if data.get("status") != "000" or not data.get("list"):
+            this_year = date.today().year
+            data = None
+            for bsns_year in (this_year - 1, this_year - 2):
+                resp = await client.get(
+                    f"{DART_BASE}/alotMatter.json",
+                    params={"crtfc_key": api_key, "corp_code": corp_code, "bsns_year": str(bsns_year), "reprt_code": "11011"},
+                )
+                data = resp.json()
+                if data.get("status") == "000" and data.get("list"):
+                    break
+        if not data or data.get("status") != "000" or not data.get("list"):
             return None
 
         # se 표기는 연도별로 공백·"(연결)" 접두어가 달라 정규화해 매칭한다.

@@ -9,7 +9,7 @@ from fastapi.responses import Response
 from app.models.report import CompanyReport, DividendInfo, FinancialYear, StockInfo, Consensus
 from app.services.dart_service import get_corp_code, get_dividend_info, get_financial_data
 from app.services.infographic import generate_report_image
-from app.services.stock_service import get_consensus, get_stock_code, get_stock_info
+from app.services.stock_service import get_consensus, get_news, get_stock_code, get_stock_info
 
 router = APIRouter()
 
@@ -33,11 +33,12 @@ async def _collect_report(company_name: str) -> CompanyReport:
     dividend_coro = get_dividend_info(corp_code) if corp_code else _safe_return_none_div()
 
     try:
-        stock_info, financials, dividend, consensus = await asyncio.gather(
+        stock_info, financials, dividend, consensus, news = await asyncio.gather(
             get_stock_info(stock_code),
             financials_coro,
             dividend_coro,
             get_consensus(stock_code),
+            get_news(stock_code),
         )
     except Exception:
         raise HTTPException(status_code=502, detail="데이터 수집 중 오류가 발생했습니다")
@@ -50,6 +51,7 @@ async def _collect_report(company_name: str) -> CompanyReport:
         financials=financials or [],
         dividend=dividend,
         consensus=consensus,
+        news=news or [],
     )
 
 

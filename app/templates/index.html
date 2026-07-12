@@ -2,22 +2,22 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>Company Insight — 기업인사이트</title>
   <link rel="stylesheet" href="/static/css/style.css" />
 </head>
 <body>
   <header class="site-header">
     <div class="header-inner">
-      <span class="logo">📊 Company Insight</span>
-      <span class="tagline">기업 분석 리포트 생성기</span>
+      <span class="logo">Company Insight</span>
+      <span class="tagline">기업 분석 리포트</span>
     </div>
   </header>
 
   <main class="main-content">
     <section class="hero">
-      <h1>기업명을 입력하면<br>인포그래픽 리포트를 생성합니다</h1>
-      <p class="hero-sub">DART 공시 + 네이버 금융 데이터 기반 · 1200×1600px PNG</p>
+      <h1>기업명을 입력하면<br>분석 리포트를 생성합니다</h1>
+      <p class="hero-sub">DART 공시 · 네이버 금융 데이터 기반</p>
     </section>
 
     <section class="search-section">
@@ -37,7 +37,7 @@
 
     <div id="loading" class="loading hidden">
       <div class="spinner"></div>
-      <p>분석 중입니다… DART와 네이버 금융 데이터를 수집 중입니다</p>
+      <p>분석 중입니다… 데이터를 수집하고 있습니다</p>
     </div>
 
     <div id="error-box" class="error-box hidden">
@@ -46,13 +46,7 @@
     </div>
 
     <section id="result-section" class="result-section hidden">
-      <div class="result-header">
-        <span id="result-title"></span>
-        <a id="download-btn" class="download-btn" download>⬇ 이미지 다운로드</a>
-      </div>
-      <div class="result-img-wrap">
-        <img id="result-img" src="" alt="기업 인포그래픽 리포트" />
-      </div>
+      <div id="report" class="report"></div>
     </section>
   </main>
 
