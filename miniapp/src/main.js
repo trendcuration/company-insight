@@ -50,6 +50,8 @@ function fmtWon(v) {
 
 const signClass = (v) => (v == null ? '' : v >= 0 ? 'up' : 'down');
 
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
 // ── 리포트 HTML 렌더링 ────────────────────────────────────────────
 function renderReport(data) {
   const si = data.stock_info;
@@ -235,9 +237,9 @@ function renderReport(data) {
 }
 
 // ── 전면광고 ──────────────────────────────────────────────────────
-// 리포트 생성 시작 시 광고를 로드→노출하고, 광고 종료(dismissed) 후
-// 준비된 결과를 보여준다. 토스 앱 밖(일반 브라우저)이나 광고 실패 시에는
-// 광고 없이 바로 결과를 보여준다 (앱 중단 금지).
+// 데이터 수신이 끝난 뒤에만 호출한다 (조회 중에 광고부터 뜨면 안 됨).
+// 광고 종료(dismissed) 후 결과를 보여준다. 토스 앱 밖(일반 브라우저)이나
+// 광고 실패 시에는 광고 없이 바로 결과를 보여준다 (앱 중단 금지).
 function runInterstitialAd() {
   return new Promise((resolve) => {
     let settled = false;
@@ -300,14 +302,15 @@ form.addEventListener('submit', async (e) => {
   setLoading(true);
 
   try {
-    // 리포트 요청과 전면광고를 동시에 진행 — 광고가 끝나면 결과 표시
-    const [response] = await Promise.all([
-      fetch(`${API_BASE_URL}/api/data/${encodeURIComponent(name)}`),
-      runInterstitialAd(),
-    ]);
+    // 데이터를 먼저 모두 받아온 뒤 — 광고 없이 실패하면 바로 오류 표시.
+    // 성공했을 때만 0.5초 뒤 전면광고를 띄우고, 광고가 끝나면 결과를 보여준다.
+    const response = await fetch(`${API_BASE_URL}/api/data/${encodeURIComponent(name)}`);
 
     if (response.ok) {
-      renderReport(await response.json());
+      const data = await response.json();
+      await sleep(500);
+      await runInterstitialAd();
+      renderReport(data);
     } else {
       let detail = '서버 오류가 발생했습니다.';
       try {
