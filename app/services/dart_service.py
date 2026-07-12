@@ -74,6 +74,7 @@ async def get_financial_data(corp_code: str) -> List[FinancialYear]:
     api_key = _get_api_key()
     if not api_key or not corp_code:
         return []
+    results: List[FinancialYear] = []
     try:
         async with httpx.AsyncClient(timeout=20) as client:
             # 사업보고서(11011) 1건이 3개년(thstrm/frmtrm/bfefrmtrm)을 담는다.
@@ -91,12 +92,84 @@ async def get_financial_data(corp_code: str) -> List[FinancialYear]:
                     resp = await client.get(f"{DART_BASE}/fnlttSinglAcnt.json", params=params)
                     data = resp.json()
                     if data.get("status") == "000" and data.get("list"):
-                        result = _parse_three_years(data["list"], bsns_year)
-                        if result:
-                            return result
+                        results = _parse_three_years(data["list"], bsns_year)
+                        if results:
+                            break
+                if results:
+                    break
+
+            # 당해연도 중간실적: 반기(11012) → 1분기(11013) 순으로 시도
+            interim = await _fetch_interim(client, corp_code, api_key, this_year)
+            if interim:
+                results = results + [interim]
     except Exception:
         pass
-    return []
+    return results
+
+
+async def _fetch_interim(
+    client: httpx.AsyncClient, corp_code: str, api_key: str, year: int,
+) -> Optional[FinancialYear]:
+    for reprt_code, label in (("11012", f"{year} 상반기"), ("11013", f"{year} 1분기")):
+        for fs_div in ("CFS", "OFS"):
+            try:
+                params = {
+                    "crtfc_key": api_key,
+                    "corp_code": corp_code,
+                    "bsns_year": str(year),
+                    "reprt_code": reprt_code,
+                    "fs_div": fs_div,
+                }
+                resp = await client.get(f"{DART_BASE}/fnlttSinglAcnt.json", params=params)
+                data = resp.json()
+                if data.get("status") != "000" or not data.get("list"):
+                    continue
+                fy = _parse_interim(data["list"], year, label)
+                if fy:
+                    return fy
+            except Exception:
+                continue
+    return None
+
+
+def _parse_interim(rows: list, year: int, label: str) -> Optional[FinancialYear]:
+    # 손익 항목은 누적(thstrm_add_amount) 우선 — 반기보고서의 thstrm_amount는
+    # 해당 3개월치라 누적치가 "상반기 실적"에 해당한다. BS는 기말 잔액 그대로.
+    items: dict = {}
+    for row in rows:
+        if row.get("sj_div") not in ("IS", "CIS", "BS"):
+            continue
+        name = (row.get("account_nm") or "").strip()
+        if name not in items:
+            items[name] = row
+
+    def _val(account_nm: str, prefer_cumulative: bool) -> Optional[float]:
+        row = items.get(account_nm)
+        if not row:
+            return None
+        fields = ["thstrm_add_amount", "thstrm_amount"] if prefer_cumulative else ["thstrm_amount"]
+        for field in fields:
+            try:
+                raw = str(row.get(field, "")).replace(",", "").strip()
+                if raw and raw not in ("-", ""):
+                    return float(raw) / 1e8
+            except Exception:
+                continue
+        return None
+
+    fy = FinancialYear(
+        year=year,
+        label=label,
+        revenue=_val(ACCOUNT_NAMES["revenue"], True),
+        operating_income=_val(ACCOUNT_NAMES["operating_income"], True),
+        net_income=_val(ACCOUNT_NAMES["net_income"], True),
+        total_assets=_val(ACCOUNT_NAMES["total_assets"], False),
+        total_liabilities=_val(ACCOUNT_NAMES["total_liabilities"], False),
+        total_equity=_val(ACCOUNT_NAMES["total_equity"], False),
+    )
+    if any(v is not None for v in [fy.revenue, fy.operating_income, fy.net_income]):
+        return fy
+    return None
 
 
 def _parse_three_years(rows: list, base_year: int) -> List[FinancialYear]:

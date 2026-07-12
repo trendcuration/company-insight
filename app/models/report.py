@@ -5,6 +5,7 @@ from pydantic import BaseModel
 
 class FinancialYear(BaseModel):
     year: int
+    label: Optional[str] = None  # 예: "2026 상반기" — 없으면 연도 표시
     revenue: Optional[float] = None
     operating_income: Optional[float] = None
     net_income: Optional[float] = None

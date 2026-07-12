@@ -114,7 +114,7 @@ function renderReport(data) {
     const fins = [...data.financials].sort((a, b) => a.year - b.year);
     const rows = fins.map((f) => `
       <tr>
-        <td>${f.year}</td>
+        <td>${esc(f.label || String(f.year))}</td>
         <td>${fmtEok(f.revenue)}</td>
         <td class="${signClass(f.operating_income)}">${fmtEok(f.operating_income)}</td>
         <td class="${signClass(f.net_income)}">${fmtEok(f.net_income)}</td>
@@ -135,7 +135,7 @@ function renderReport(data) {
     if (hasBS) {
       const bsRows = fins.map((f) => `
         <tr>
-          <td>${f.year}</td>
+          <td>${esc(f.label || String(f.year))}</td>
           <td>${fmtEok(f.total_assets)}</td>
           <td>${fmtEok(f.total_liabilities)}</td>
           <td>${fmtEok(f.total_equity)}</td>
