@@ -5,8 +5,7 @@ export default defineConfig({
   brand: {
     displayName: '기업인사이트',
     primaryColor: '#3498DB',
-    // 콘솔에 등록한 앱 아이콘 URL로 교체하세요
-    icon: 'https://static.toss.im/appsintoss/placeholder/icon.png',
+    icon: 'https://static.toss.im/appsintoss/21275/ea0d96fc-638a-448f-ab14-137cd86f5bcf.png',
   },
   permissions: [],
   web: {
