@@ -8,6 +8,9 @@ class FinancialYear(BaseModel):
     revenue: Optional[float] = None
     operating_income: Optional[float] = None
     net_income: Optional[float] = None
+    total_assets: Optional[float] = None
+    total_liabilities: Optional[float] = None
+    total_equity: Optional[float] = None
 
 
 class DividendInfo(BaseModel):
@@ -22,6 +25,13 @@ class StockInfo(BaseModel):
     market_cap: Optional[str] = None
     per: Optional[float] = None
     pbr: Optional[float] = None
+    eps: Optional[float] = None
+    bps: Optional[float] = None
+    high_52w: Optional[int] = None
+    low_52w: Optional[int] = None
+    volume: Optional[str] = None
+    foreign_ratio: Optional[float] = None
+    dividend_yield: Optional[float] = None
 
 
 class Consensus(BaseModel):

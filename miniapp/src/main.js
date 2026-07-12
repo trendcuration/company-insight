@@ -58,63 +58,115 @@ function renderReport(data) {
   // 헤더
   parts.push(`
     <div class="rp-head">
-      <h2>${esc(data.company_name)}${data.stock_code ? ` <span class="rp-code">[${esc(data.stock_code)}]</span>` : ''}</h2>
+      <h2>${esc(data.company_name)}${data.stock_code ? ` <span class="rp-code">${esc(data.stock_code)}</span>` : ''}</h2>
     </div>
   `);
 
-  // 현재 주가
+  // 현재 주가 + 투자지표 + 52주 범위
   if (si && si.current_price != null) {
     const chg = si.price_change;
     const chgHtml = chg != null
       ? `<span class="rp-change ${signClass(chg)}">${chg >= 0 ? '▲' : '▼'} ${Math.abs(chg).toFixed(2)}%</span>`
       : '';
-    const meta = [
-      si.market_cap ? `시총 ${esc(si.market_cap)}` : null,
-      si.per != null ? `PER ${si.per.toFixed(1)}x` : null,
-      si.pbr != null ? `PBR ${si.pbr.toFixed(1)}x` : null,
-    ].filter(Boolean).join('  ·  ');
+
+    const kvs = [
+      si.market_cap ? ['시가총액', si.market_cap] : null,
+      si.per != null ? ['PER', `${si.per.toFixed(1)}배`] : null,
+      si.pbr != null ? ['PBR', `${si.pbr.toFixed(2)}배`] : null,
+      si.eps != null ? ['EPS', fmtWon(Math.round(si.eps))] : null,
+      si.bps != null ? ['BPS', fmtWon(Math.round(si.bps))] : null,
+      si.volume ? ['거래량', si.volume] : null,
+      si.foreign_ratio != null ? ['외국인 비율', `${si.foreign_ratio.toFixed(1)}%`] : null,
+    ].filter(Boolean);
+    const grid = kvs.length
+      ? `<div class="rp-grid">${kvs.map(([k, v]) => `<div class="rp-kv"><span>${k}</span><strong>${esc(v)}</strong></div>`).join('')}</div>`
+      : '';
+
+    // 52주 범위 바
+    let range = '';
+    if (si.high_52w && si.low_52w && si.high_52w > si.low_52w) {
+      const pos = Math.min(100, Math.max(0,
+        ((si.current_price - si.low_52w) / (si.high_52w - si.low_52w)) * 100));
+      range = `
+        <div class="rp-range">
+          <div class="rp-range-labels">
+            <span>52주 최저 ${fmtWon(si.low_52w)}</span>
+            <span>52주 최고 ${fmtWon(si.high_52w)}</span>
+          </div>
+          <div class="rp-range-bar">
+            <div class="rp-range-fill" style="width:${pos.toFixed(1)}%"></div>
+            <div class="rp-range-dot" style="left:${pos.toFixed(1)}%"></div>
+          </div>
+        </div>`;
+    }
+
     parts.push(`
       <div class="rp-card">
         <div class="rp-label">현재 주가</div>
-        <div class="rp-price ${signClass(chg)}">${fmtWon(si.current_price)} ${chgHtml}</div>
-        ${meta ? `<div class="rp-meta">${meta}</div>` : ''}
+        <div class="rp-price ${signClass(chg)}">${fmtWon(si.current_price)}${chgHtml}</div>
+        ${grid}${range}
       </div>
     `);
   }
 
-  // 재무제표
+  // 재무제표 (손익)
   if (data.financials && data.financials.length) {
-    const rows = [...data.financials]
-      .sort((a, b) => a.year - b.year)
-      .map((f) => `
-        <tr>
-          <td>${f.year}</td>
-          <td>${fmtEok(f.revenue)}</td>
-          <td class="${signClass(f.operating_income)}">${fmtEok(f.operating_income)}</td>
-          <td class="${signClass(f.net_income)}">${fmtEok(f.net_income)}</td>
-        </tr>
-      `).join('');
+    const fins = [...data.financials].sort((a, b) => a.year - b.year);
+    const rows = fins.map((f) => `
+      <tr>
+        <td>${f.year}</td>
+        <td>${fmtEok(f.revenue)}</td>
+        <td class="${signClass(f.operating_income)}">${fmtEok(f.operating_income)}</td>
+        <td class="${signClass(f.net_income)}">${fmtEok(f.net_income)}</td>
+      </tr>
+    `).join('');
     parts.push(`
       <div class="rp-card">
-        <div class="rp-label">💰 재무제표 <small>(단위: 억원)</small></div>
+        <div class="rp-label">실적 <small>(연결 기준, 단위: 억원)</small></div>
         <table class="rp-table">
           <thead><tr><th>연도</th><th>매출액</th><th>영업이익</th><th>순이익</th></tr></thead>
           <tbody>${rows}</tbody>
         </table>
       </div>
     `);
+
+    // 재무상태 (자산/부채/자본)
+    const hasBS = fins.some((f) => f.total_assets != null);
+    if (hasBS) {
+      const bsRows = fins.map((f) => `
+        <tr>
+          <td>${f.year}</td>
+          <td>${fmtEok(f.total_assets)}</td>
+          <td>${fmtEok(f.total_liabilities)}</td>
+          <td>${fmtEok(f.total_equity)}</td>
+        </tr>
+      `).join('');
+      parts.push(`
+        <div class="rp-card">
+          <div class="rp-label">재무 상태 <small>(단위: 억원)</small></div>
+          <table class="rp-table">
+            <thead><tr><th>연도</th><th>자산</th><th>부채</th><th>자본</th></tr></thead>
+            <tbody>${bsRows}</tbody>
+          </table>
+        </div>
+      `);
+    }
   }
 
-  // 배당
+  // 배당 (DART 우선, 없으면 시세 API의 배당수익률)
   const dv = data.dividend;
-  if (dv && (dv.dps != null || dv.payout_ratio != null || dv.dividend_yield != null)) {
+  const divItems = [];
+  if (dv && dv.dps != null) divItems.push(['주당배당금', fmtWon(dv.dps)]);
+  if (dv && dv.payout_ratio != null) divItems.push(['배당성향', `${dv.payout_ratio.toFixed(1)}%`]);
+  const dYield = (dv && dv.dividend_yield != null) ? dv.dividend_yield
+    : (si && si.dividend_yield != null ? si.dividend_yield : null);
+  if (dYield != null) divItems.push(['시가배당률', `${dYield.toFixed(2)}%`]);
+  if (divItems.length) {
     parts.push(`
       <div class="rp-card">
-        <div class="rp-label">📈 배당 정보</div>
+        <div class="rp-label">배당</div>
         <div class="rp-stats">
-          <div class="rp-stat"><span>주당배당금</span><strong>${dv.dps != null ? fmtWon(dv.dps) : 'N/A'}</strong></div>
-          <div class="rp-stat"><span>배당성향</span><strong>${dv.payout_ratio != null ? dv.payout_ratio.toFixed(1) + '%' : 'N/A'}</strong></div>
-          <div class="rp-stat"><span>시가배당률</span><strong>${dv.dividend_yield != null ? dv.dividend_yield.toFixed(2) + '%' : 'N/A'}</strong></div>
+          ${divItems.map(([k, v]) => `<div class="rp-stat"><span>${k}</span><strong>${esc(v)}</strong></div>`).join('')}
         </div>
       </div>
     `);
@@ -124,10 +176,10 @@ function renderReport(data) {
   const con = data.consensus;
   if (con && con.target_avg != null) {
     const range = con.target_high != null && con.target_low != null
-      ? `<div class="rp-meta">최고 ${fmtWon(con.target_high)}  /  최저 ${fmtWon(con.target_low)}</div>`
+      ? `<div class="rp-meta">최고 ${fmtWon(con.target_high)} · 최저 ${fmtWon(con.target_low)}</div>`
       : '';
     const upside = si && si.current_price
-      ? `<div class="rp-meta">현재가 대비 <strong class="${signClass(con.target_avg - si.current_price)}">${(((con.target_avg / si.current_price) - 1) * 100).toFixed(1)}%</strong></div>`
+      ? `<div class="rp-meta">현재가 대비 상승여력 <strong class="${signClass(con.target_avg - si.current_price)}">${(((con.target_avg / si.current_price) - 1) * 100).toFixed(1)}%</strong></div>`
       : '';
     let opinions = '';
     if (con.buy_count != null || con.neutral_count != null || con.sell_count != null) {
@@ -140,21 +192,20 @@ function renderReport(data) {
     }
     parts.push(`
       <div class="rp-card">
-        <div class="rp-label">🔮 증권가 전망</div>
+        <div class="rp-label">증권가 전망</div>
         <div class="rp-target">목표주가 평균 <strong>${fmtWon(con.target_avg)}</strong></div>
         ${range}${upside}${opinions}
       </div>
     `);
   }
 
-  // 데이터가 주가 외에 하나도 없을 때 안내
-  if (parts.length <= 2 && !(si && si.current_price != null)) {
+  if (parts.length <= 1) {
     parts.push(`<div class="rp-card"><div class="rp-meta">수집된 데이터가 없습니다.</div></div>`);
   }
 
   parts.push(`
     <div class="rp-footer">
-      데이터 출처: DART Open API, 네이버 금융 · 투자 판단의 책임은 본인에게 있습니다
+      데이터 출처: DART Open API · 네이버 금융 | 투자 판단의 책임은 본인에게 있습니다
     </div>
   `);
 

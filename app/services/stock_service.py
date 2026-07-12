@@ -98,7 +98,15 @@ async def _stock_info_from_api(stock_code: str) -> Optional[StockInfo]:
         except Exception:
             pass
 
-    # 종목 개요 (시총/PER/PBR)
+    eps: Optional[float] = None
+    bps: Optional[float] = None
+    high_52w: Optional[int] = None
+    low_52w: Optional[int] = None
+    volume: Optional[str] = None
+    foreign_ratio: Optional[float] = None
+    dividend_yield: Optional[float] = None
+
+    # 종목 개요 (시총/PER/PBR/52주/거래량 등) — code와 한글 key 라벨 병행 매칭
     data = await _get_json(
         f"https://m.stock.naver.com/api/stock/{stock_code}/integration"
     )
@@ -106,13 +114,30 @@ async def _stock_info_from_api(stock_code: str) -> Optional[StockInfo]:
         try:
             for info in data.get("totalInfos", []):
                 code = info.get("code", "")
+                key = str(info.get("key", ""))
                 value = str(info.get("value", ""))
-                if code == "marketValue" and not market_cap:
+                if (code == "marketValue" or "시가총액" in key) and not market_cap:
                     market_cap = value.replace("억원", "억").strip() or None
-                elif code == "per" and per is None:
+                elif (code == "per" or key.upper().startswith("PER")) and per is None:
                     per = _clean_num(value)
-                elif code == "pbr" and pbr is None:
+                elif (code == "pbr" or key.upper().startswith("PBR")) and pbr is None:
                     pbr = _clean_num(value)
+                elif (code == "eps" or key.upper().startswith("EPS")) and eps is None:
+                    eps = _clean_num(value)
+                elif (code == "bps" or key.upper().startswith("BPS")) and bps is None:
+                    bps = _clean_num(value)
+                elif "52주 최고" in key and high_52w is None:
+                    v = _clean_num(value)
+                    high_52w = int(v) if v else None
+                elif "52주 최저" in key and low_52w is None:
+                    v = _clean_num(value)
+                    low_52w = int(v) if v else None
+                elif key == "거래량" and volume is None:
+                    volume = value.strip() or None
+                elif "외국인" in key and foreign_ratio is None:
+                    foreign_ratio = _clean_num(value)
+                elif "배당수익률" in key and dividend_yield is None:
+                    dividend_yield = _clean_num(value)
         except Exception:
             pass
 
@@ -124,6 +149,13 @@ async def _stock_info_from_api(stock_code: str) -> Optional[StockInfo]:
         market_cap=market_cap,
         per=per,
         pbr=pbr,
+        eps=eps,
+        bps=bps,
+        high_52w=high_52w,
+        low_52w=low_52w,
+        volume=volume,
+        foreign_ratio=foreign_ratio,
+        dividend_yield=dividend_yield,
     )
 
 
@@ -207,13 +239,9 @@ async def get_stock_info(stock_code: str) -> Optional[StockInfo]:
         return info
 
 
-async def get_consensus(stock_code: str) -> Optional[Consensus]:
+def _parse_consensus_soup(soup) -> Optional[Consensus]:
+    """페이지에서 '목표주가'/'투자의견' 라벨 기반으로 컨센서스를 추출한다."""
     try:
-        soup = await _get(
-            f"https://finance.naver.com/item/coinfo.naver?code={stock_code}"
-        )
-        if not soup:
-            return None
 
         target_avg: Optional[int] = None
         target_high: Optional[int] = None
@@ -259,3 +287,31 @@ async def get_consensus(stock_code: str) -> Optional[Consensus]:
         )
     except Exception:
         return None
+
+
+async def get_consensus(stock_code: str) -> Optional[Consensus]:
+    # 1차: 모바일 통합 API에 컨센서스 필드가 있으면 사용
+    try:
+        data = await _get_json(
+            f"https://m.stock.naver.com/api/stock/{stock_code}/integration"
+        )
+        if data:
+            ci = data.get("consensusInfo") or {}
+            target = _clean_num(str(ci.get("priceTargetMean", "")))
+            if target and target > 100:
+                return Consensus(target_avg=int(target))
+    except Exception:
+        pass
+
+    # 2차: 네이버 종목 코인포 페이지의 실제 데이터 소스(WISEfn) 직접 조회
+    for url in (
+        f"https://navercomp.wisereport.co.kr/v2/company/c1010001.aspx?cmp_cd={stock_code}",
+        f"https://finance.naver.com/item/coinfo.naver?code={stock_code}",
+    ):
+        soup = await _get(url)
+        if not soup:
+            continue
+        con = _parse_consensus_soup(soup)
+        if con:
+            return con
+    return None

@@ -21,6 +21,9 @@ ACCOUNT_NAMES = {
     "revenue": "매출액",
     "operating_income": "영업이익",
     "net_income": "당기순이익",
+    "total_assets": "자산총계",
+    "total_liabilities": "부채총계",
+    "total_equity": "자본총계",
 }
 
 
@@ -95,9 +98,10 @@ async def get_financial_data(corp_code: str) -> List[FinancialYear]:
 def _parse_three_years(rows: list) -> List[FinancialYear]:
     # 손익계산서 행만, 계정명 기준 매칭. 같은 계정명이 연결/포괄 등으로
     # 중복될 수 있어 첫 번째(정렬 우선) 행을 사용한다.
+    # 손익계산서(IS/CIS)와 재무상태표(BS) 계정을 모두 수집한다.
     items: dict = {}
     for row in rows:
-        if row.get("sj_div") not in ("IS", "CIS"):
+        if row.get("sj_div") not in ("IS", "CIS", "BS"):
             continue
         name = (row.get("account_nm") or "").strip()
         if name not in items:
@@ -119,18 +123,27 @@ def _parse_three_years(rows: list) -> List[FinancialYear]:
             revenue=_val(ACCOUNT_NAMES["revenue"], "thstrm_amount"),
             operating_income=_val(ACCOUNT_NAMES["operating_income"], "thstrm_amount"),
             net_income=_val(ACCOUNT_NAMES["net_income"], "thstrm_amount"),
+            total_assets=_val(ACCOUNT_NAMES["total_assets"], "thstrm_amount"),
+            total_liabilities=_val(ACCOUNT_NAMES["total_liabilities"], "thstrm_amount"),
+            total_equity=_val(ACCOUNT_NAMES["total_equity"], "thstrm_amount"),
         ),
         FinancialYear(
             year=2023,
             revenue=_val(ACCOUNT_NAMES["revenue"], "frmtrm_amount"),
             operating_income=_val(ACCOUNT_NAMES["operating_income"], "frmtrm_amount"),
             net_income=_val(ACCOUNT_NAMES["net_income"], "frmtrm_amount"),
+            total_assets=_val(ACCOUNT_NAMES["total_assets"], "frmtrm_amount"),
+            total_liabilities=_val(ACCOUNT_NAMES["total_liabilities"], "frmtrm_amount"),
+            total_equity=_val(ACCOUNT_NAMES["total_equity"], "frmtrm_amount"),
         ),
         FinancialYear(
             year=2022,
             revenue=_val(ACCOUNT_NAMES["revenue"], "bfefrmtrm_amount"),
             operating_income=_val(ACCOUNT_NAMES["operating_income"], "bfefrmtrm_amount"),
             net_income=_val(ACCOUNT_NAMES["net_income"], "bfefrmtrm_amount"),
+            total_assets=_val(ACCOUNT_NAMES["total_assets"], "bfefrmtrm_amount"),
+            total_liabilities=_val(ACCOUNT_NAMES["total_liabilities"], "bfefrmtrm_amount"),
+            total_equity=_val(ACCOUNT_NAMES["total_equity"], "bfefrmtrm_amount"),
         ),
     ]
     # Return only years with at least one non-None value
