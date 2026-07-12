@@ -38,22 +38,24 @@ def _clean_num(text: str) -> Optional[float]:
 
 
 async def get_stock_code(company_name: str) -> Optional[str]:
+    """Search stock code via Naver autocomplete API (replaces broken searchList.naver)."""
     try:
-        encoded = quote(company_name, encoding="euc-kr")
-        soup = await _get(
-            f"https://finance.naver.com/search/searchList.naver?query={encoded}"
-        )
-        if not soup:
-            return None
-        link = (
-            soup.select_one("table.tbl_search td.tit a")
-            or soup.select_one("table.type_1 td.tit a")
-            or soup.select_one("a[href*='code=']")
-        )
-        if not link:
-            return None
-        m = re.search(r"code=(\d{6})", link.get("href", ""))
-        return m.group(1) if m else None
+        encoded = quote(company_name)
+        url = f"https://ac.stock.naver.com/ac?q={encoded}&target=stock,index,marketindicator"
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/126.0.0.0 Safari/537.36",
+            "Accept": "application/json, text/plain, */*",
+            "Referer": "https://finance.naver.com/",
+        }
+        async with httpx.AsyncClient(headers=headers, timeout=10) as client:
+            resp = await client.get(url)
+            resp.raise_for_status()
+            data = resp.json()
+            for item in data.get("items", []):
+                code = item.get("code", "")
+                if item.get("category") == "stock" and len(code) == 6 and code.isdigit():
+                    return code
+        return None
     except Exception:
         return None
 
