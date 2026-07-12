@@ -1,0 +1,19 @@
+{
+  "name": "company-insight-miniapp",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "ait:build": "ait build",
+    "ait:deploy": "ait deploy"
+  },
+  "dependencies": {
+    "@apps-in-toss/web-framework": "^2.10.5"
+  },
+  "devDependencies": {
+    "vite": "^5.4.0",
+    "typescript": "^5.5.0"
+  }
+}

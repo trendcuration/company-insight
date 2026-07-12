@@ -6,3 +6,10 @@ data/CORPCODE.xml
 data/CORPCODE.zip
 *.png
 .DS_Store
+
+# miniapp
+miniapp/node_modules/
+miniapp/dist/
+miniapp/.granite/
+miniapp/*.ait
+miniapp/.env

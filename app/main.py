@@ -4,6 +4,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -13,6 +14,14 @@ load_dotenv()
 BASE_DIR = Path(__file__).parent
 
 app = FastAPI(title="Company Insight", version="1.0.0")
+
+# 앱인토스 웹뷰(미니앱)에서 API 호출 시 오리진이 달라 CORS 허용 필요
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["POST", "GET"],
+    allow_headers=["*"],
+)
 
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
