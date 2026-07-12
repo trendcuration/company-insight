@@ -19,10 +19,10 @@ HEADERS = {
 }
 
 
-def _get(url: str) -> Optional[BeautifulSoup]:
+async def _get(url: str) -> Optional[BeautifulSoup]:
     try:
-        with httpx.Client(headers=HEADERS, timeout=10, follow_redirects=True) as client:
-            resp = client.get(url)
+        async with httpx.AsyncClient(headers=HEADERS, timeout=10, follow_redirects=True) as client:
+            resp = await client.get(url)
             resp.raise_for_status()
             return BeautifulSoup(resp.text, "lxml")
     except Exception:
@@ -32,28 +32,27 @@ def _get(url: str) -> Optional[BeautifulSoup]:
 def _clean_num(text: str) -> Optional[float]:
     try:
         val = re.sub(r"[^\d.\-]", "", text.strip())
-        return float(val) if val else None
+        return float(val) if val not in ("", "-", ".") else None
     except Exception:
         return None
 
 
 async def get_stock_code(company_name: str) -> Optional[str]:
     try:
-        encoded = quote(company_name)
-        soup = _get(
+        encoded = quote(company_name, encoding="euc-kr")
+        soup = await _get(
             f"https://finance.naver.com/search/searchList.naver?query={encoded}"
         )
         if not soup:
             return None
-        link = soup.select_one("dl.name_area dt a")
-        if not link:
-            link = soup.select_one("table.type_1 td.tit a")
-        if not link:
-            link = soup.select_one("a[href*='code=']")
+        link = (
+            soup.select_one("table.tbl_search td.tit a")
+            or soup.select_one("table.type_1 td.tit a")
+            or soup.select_one("a[href*='code=']")
+        )
         if not link:
             return None
-        href = link.get("href", "")
-        m = re.search(r"code=(\d{6})", href)
+        m = re.search(r"code=(\d{6})", link.get("href", ""))
         return m.group(1) if m else None
     except Exception:
         return None
@@ -61,7 +60,7 @@ async def get_stock_code(company_name: str) -> Optional[str]:
 
 async def get_stock_info(stock_code: str) -> Optional[StockInfo]:
     try:
-        soup = _get(
+        soup = await _get(
             f"https://finance.naver.com/item/main.naver?code={stock_code}"
         )
         if not soup:
@@ -73,42 +72,49 @@ async def get_stock_info(stock_code: str) -> Optional[StockInfo]:
         per: Optional[float] = None
         pbr: Optional[float] = None
 
-        # 현재가
+        # 현재가: <dl class="no_today"> 첫 blind span
         today_dl = soup.select_one("dl.no_today")
         if today_dl:
-            spans = today_dl.select("span.blind")
-            if spans:
-                price_text = spans[0].get_text(strip=True).replace(",", "")
-                try:
-                    price = int(price_text)
-                except Exception:
-                    pass
+            span = today_dl.select_one("span.blind")
+            if span:
+                v = _clean_num(span.get_text())
+                if v is not None:
+                    price = int(v)
 
-        # 등락률
-        blind_spans = soup.select("dl.no_today span.blind")
-        for span in blind_spans:
-            t = span.get_text(strip=True)
-            if "%" in t:
-                try:
-                    price_change = float(t.replace("%", "").replace("+", ""))
-                except Exception:
-                    pass
-                break
+        # 등락률: <dl class="no_exday"> — blind span 2개(전일대비 금액, 등락률)
+        exday_dl = soup.select_one("dl.no_exday")
+        if exday_dl:
+            spans = exday_dl.select("span.blind")
+            if len(spans) >= 2:
+                pct = _clean_num(spans[1].get_text())
+                if pct is not None:
+                    # 하락 여부는 클래스로 판별 (no_down / ico down)
+                    is_down = bool(
+                        exday_dl.select_one("em.no_down")
+                        or exday_dl.select_one("span.ico.down")
+                    )
+                    price_change = -abs(pct) if is_down else abs(pct)
 
-        # 시가총액
-        sise_total = soup.select_one("dl.sise_total")
-        if sise_total:
-            mc_spans = sise_total.select("span.blind")
-            if mc_spans:
-                market_cap = mc_spans[0].get_text(strip=True)
+        # 시가총액: <em id="_market_sum"> (단위: 억원, "429조 5,394" 형태)
+        mc_el = soup.select_one("em#_market_sum")
+        if mc_el:
+            raw = re.sub(r"\s+", " ", mc_el.get_text(strip=True)).strip()
+            if raw:
+                market_cap = raw if "조" in raw else f"{raw}억원"
+        if not market_cap:
+            sise_total = soup.select_one("dl.sise_total span.blind")
+            if sise_total:
+                market_cap = sise_total.get_text(strip=True)
 
-        # PER / PBR
         per_el = soup.select_one("em#_per")
         pbr_el = soup.select_one("em#_pbr")
         if per_el:
             per = _clean_num(per_el.get_text())
         if pbr_el:
             pbr = _clean_num(pbr_el.get_text())
+
+        if price is None and market_cap is None and per is None:
+            return None
 
         return StockInfo(
             current_price=price,
@@ -123,7 +129,7 @@ async def get_stock_info(stock_code: str) -> Optional[StockInfo]:
 
 async def get_consensus(stock_code: str) -> Optional[Consensus]:
     try:
-        soup = _get(
+        soup = await _get(
             f"https://finance.naver.com/item/coinfo.naver?code={stock_code}"
         )
         if not soup:
@@ -136,28 +142,20 @@ async def get_consensus(stock_code: str) -> Optional[Consensus]:
         neutral_count: Optional[int] = None
         sell_count: Optional[int] = None
 
-        # 목표주가 영역
-        consensus_table = soup.select_one("div.con_tab")
-        if not consensus_table:
-            consensus_table = soup
+        # "목표주가" 라벨이 붙은 셀의 인접 값만 신뢰한다
+        for label_el in soup.find_all(string=re.compile("목표주가")):
+            cell = label_el.find_parent(["th", "td", "dt", "strong"])
+            if not cell:
+                continue
+            sibling = cell.find_next_sibling(["td", "dd", "em"])
+            if sibling:
+                v = _clean_num(sibling.get_text())
+                if v and v > 100:
+                    target_avg = int(v)
+                    break
 
-        # 목표주가 평균/최고/최저
-        target_els = consensus_table.select("em.num_score, td em, span.num")
-        price_nums = []
-        for el in target_els:
-            v = _clean_num(el.get_text())
-            if v and v > 1000:
-                price_nums.append(int(v))
-
-        if len(price_nums) >= 3:
-            target_avg, target_high, target_low = price_nums[0], price_nums[1], price_nums[2]
-        elif len(price_nums) == 1:
-            target_avg = price_nums[0]
-
-        # 투자의견 분포 파싱
-        opinion_area = soup.select("dl.opinion_grade dd")
-        opinion_texts = [el.get_text(strip=True) for el in opinion_area]
-        for text in opinion_texts:
+        # 투자의견 분포 (있는 경우에만)
+        for text in [el.get_text(" ", strip=True) for el in soup.select("dl.opinion_grade, div.opinion")]:
             m = re.search(r"매수[^\d]*(\d+)", text)
             if m:
                 buy_count = int(m.group(1))
@@ -168,7 +166,7 @@ async def get_consensus(stock_code: str) -> Optional[Consensus]:
             if m:
                 sell_count = int(m.group(1))
 
-        if all(v is None for v in [target_avg, target_high, target_low, buy_count]):
+        if target_avg is None and buy_count is None:
             return None
 
         return Consensus(

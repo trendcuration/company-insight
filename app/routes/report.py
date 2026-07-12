@@ -1,6 +1,7 @@
 from __future__ import annotations
 import asyncio
 from typing import List, Optional
+from urllib.parse import quote
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import Response
@@ -57,8 +58,12 @@ async def create_report(company_name: str) -> Response:
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"인포그래픽 생성 오류: {exc}")
 
+    # HTTP 헤더는 latin-1만 허용 — 한글 파일명은 RFC 5987 filename*로 인코딩
+    encoded_name = quote(f"{company_name}_report.png")
     return Response(
         content=png_bytes,
         media_type="image/png",
-        headers={"Content-Disposition": f'inline; filename="{company_name}_report.png"'},
+        headers={
+            "Content-Disposition": f"inline; filename=\"report.png\"; filename*=UTF-8''{encoded_name}"
+        },
     )

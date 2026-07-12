@@ -138,7 +138,14 @@ async def get_dividend_info(corp_code: str) -> Optional[DividendInfo]:
         if data.get("status") != "000" or not data.get("list"):
             return None
 
-        rows = {row.get("se", ""): row for row in data["list"] if row.get("stock_knd") == "보통주"}
+        # se 표기는 연도별로 공백이 달라 정규화해 매칭한다.
+        # 종류(stock_knd)가 있는 항목은 보통주 우선, 없는 항목(배당성향 등)은 그대로 수용.
+        rows: dict = {}
+        for row in data["list"]:
+            se = row.get("se", "").replace(" ", "")
+            knd = (row.get("stock_knd") or "").strip()
+            if se not in rows or "보통" in knd:
+                rows[se] = row
 
         def _f(se_key: str, field: str = "thstrm") -> Optional[float]:
             row = rows.get(se_key)
@@ -150,9 +157,9 @@ async def get_dividend_info(corp_code: str) -> Optional[DividendInfo]:
             except Exception:
                 return None
 
-        dps = _f("주당 현금배당금(원)")
-        payout = _f("현금배당 성향(%)")
-        dyield = _f("현금배당 수익률(%)")
+        dps = _f("주당현금배당금(원)")
+        payout = _f("현금배당성향(%)")
+        dyield = _f("현금배당수익률(%)")
 
         if all(v is None for v in [dps, payout, dyield]):
             return None
