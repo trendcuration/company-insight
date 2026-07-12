@@ -308,7 +308,7 @@ form.addEventListener('submit', async (e) => {
 
     if (response.ok) {
       const data = await response.json();
-      await sleep(500);
+      await sleep(2000);
       await runInterstitialAd();
       renderReport(data);
     } else {
