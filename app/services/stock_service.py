@@ -58,13 +58,84 @@ async def get_stock_code(company_name: str) -> Optional[str]:
         return None
 
 
+async def _get_json(url: str) -> Optional[dict]:
+    try:
+        async with httpx.AsyncClient(headers=HEADERS, timeout=10, follow_redirects=True) as client:
+            resp = await client.get(url)
+            resp.raise_for_status()
+            return resp.json()
+    except Exception:
+        return None
+
+
+async def _stock_info_from_api(stock_code: str) -> Optional[StockInfo]:
+    """네이버 공개 JSON API — HTML 스크래핑보다 구조 변경에 강하다."""
+    price: Optional[int] = None
+    price_change: Optional[float] = None
+    market_cap: Optional[str] = None
+    per: Optional[float] = None
+    pbr: Optional[float] = None
+
+    # 실시간 시세 (현재가/등락률)
+    data = await _get_json(
+        f"https://polling.finance.naver.com/api/realtime/domestic/stock/{stock_code}"
+    )
+    if data:
+        try:
+            item = (data.get("datas") or [{}])[0]
+            close = str(item.get("closePrice", "")).replace(",", "")
+            if close:
+                price = int(float(close))
+            ratio = str(item.get("fluctuationsRatio", "")).replace(",", "")
+            if ratio:
+                price_change = float(ratio)
+                # 하락 방향인데 부호가 없는 경우 보정
+                direction = (item.get("compareToPreviousPrice") or {}).get("code")
+                if direction in ("4", "5") and price_change > 0:
+                    price_change = -price_change
+        except Exception:
+            pass
+
+    # 종목 개요 (시총/PER/PBR)
+    data = await _get_json(
+        f"https://m.stock.naver.com/api/stock/{stock_code}/integration"
+    )
+    if data:
+        try:
+            for info in data.get("totalInfos", []):
+                code = info.get("code", "")
+                value = str(info.get("value", ""))
+                if code == "marketValue" and not market_cap:
+                    market_cap = value.replace("억원", "억").strip() or None
+                elif code == "per" and per is None:
+                    per = _clean_num(value)
+                elif code == "pbr" and pbr is None:
+                    pbr = _clean_num(value)
+        except Exception:
+            pass
+
+    if price is None and market_cap is None and per is None:
+        return None
+    return StockInfo(
+        current_price=price,
+        price_change=price_change,
+        market_cap=market_cap,
+        per=per,
+        pbr=pbr,
+    )
+
+
 async def get_stock_info(stock_code: str) -> Optional[StockInfo]:
+    # 1차: JSON API, 2차: 데스크톱 페이지 스크래핑
+    info = await _stock_info_from_api(stock_code)
+    if info and info.current_price is not None:
+        return info
     try:
         soup = await _get(
             f"https://finance.naver.com/item/main.naver?code={stock_code}"
         )
         if not soup:
-            return None
+            return info
 
         price: Optional[int] = None
         price_change: Optional[float] = None
@@ -114,7 +185,14 @@ async def get_stock_info(stock_code: str) -> Optional[StockInfo]:
             pbr = _clean_num(pbr_el.get_text())
 
         if price is None and market_cap is None and per is None:
-            return None
+            return info
+
+        # API에서 얻은 부분 데이터로 빈 값을 보충
+        if info:
+            price_change = price_change if price_change is not None else info.price_change
+            market_cap = market_cap or info.market_cap
+            per = per if per is not None else info.per
+            pbr = pbr if pbr is not None else info.pbr
 
         return StockInfo(
             current_price=price,
@@ -124,7 +202,7 @@ async def get_stock_info(stock_code: str) -> Optional[StockInfo]:
             pbr=pbr,
         )
     except Exception:
-        return None
+        return info
 
 
 async def get_consensus(stock_code: str) -> Optional[Consensus]:

@@ -23,13 +23,18 @@ COLOR_ACCENT = (52, 152, 219)
 COLOR_GOLD = (241, 196, 15)
 COLOR_GRID = (255, 255, 255, 18)
 
+# 번들 폰트 우선 — 배포 서버에 시스템 한글 폰트가 없어도 렌더링 보장
+FONTS_DIR = Path(__file__).parent.parent / "fonts"
+
 NOTO_PATHS = [
+    str(FONTS_DIR / "NanumGothicBold.ttf"),
     "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc",
     "/usr/share/fonts/opentype/noto/NotoSansCJKkr-Bold.otf",
     "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",
     "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
 ]
 NOTO_REGULAR_PATHS = [
+    str(FONTS_DIR / "NanumGothic.ttf"),
     "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
     "/usr/share/fonts/opentype/noto/NotoSansCJKkr-Regular.otf",
     "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",
@@ -154,7 +159,7 @@ def generate_report_image(report: CompanyReport) -> bytes:
 
     # ── 헤더바 (y=0~80) ────────────────────────────────────────────
     draw.rectangle([0, 0, WIDTH, 80], fill=(10, 10, 25, 230))
-    draw.text((PAD, 22), "📊 Company Insight", font=font_sec, fill=COLOR_ACCENT)
+    draw.text((PAD, 22), "Company Insight", font=font_sec, fill=COLOR_ACCENT)
     draw.text((WIDTH - PAD - 200, 22), "issuepicki.com", font=font_small, fill=COLOR_GRAY)
 
     # ── 기업명 + 종목코드 (y=90~165) ──────────────────────────────
@@ -189,7 +194,7 @@ def generate_report_image(report: CompanyReport) -> bytes:
 
     # ── 재무제표 카드 (y=340~600) ──────────────────────────────────
     _draw_card_on_overlay(draw, PAD, 340, WIDTH - PAD * 2, 245)
-    draw.text((PAD + 20, 352), "💰 재무제표 (단위: 억원)", font=font_label, fill=COLOR_ACCENT)
+    draw.text((PAD + 20, 352), "재무제표 (단위: 억원)", font=font_label, fill=COLOR_ACCENT)
     if report.financials:
         col_w = (WIDTH - PAD * 2 - 40) // 4
         headers = ["연도", "매출액", "영업이익", "순이익"]
@@ -213,7 +218,7 @@ def generate_report_image(report: CompanyReport) -> bytes:
 
     # ── 배당 정보 카드 (y=615~810) ─────────────────────────────────
     _draw_card_on_overlay(draw, PAD, 615, WIDTH - PAD * 2, 185)
-    draw.text((PAD + 20, 627), "📈 배당 정보", font=font_label, fill=COLOR_ACCENT)
+    draw.text((PAD + 20, 627), "배당 정보", font=font_label, fill=COLOR_ACCENT)
     div = report.dividend
     if div and any(v is not None for v in [div.dps, div.payout_ratio, div.dividend_yield]):
         items = [
@@ -231,7 +236,7 @@ def generate_report_image(report: CompanyReport) -> bytes:
 
     # ── 증권가 전망 카드 (y=825~1075) ─────────────────────────────
     _draw_card_on_overlay(draw, PAD, 825, WIDTH - PAD * 2, 250)
-    draw.text((PAD + 20, 837), "🔮 증권가 전망", font=font_label, fill=COLOR_ACCENT)
+    draw.text((PAD + 20, 837), "증권가 전망", font=font_label, fill=COLOR_ACCENT)
     con = report.consensus
     if con and con.target_avg:
         # 목표주가
@@ -265,7 +270,7 @@ def generate_report_image(report: CompanyReport) -> bytes:
 
     # ── 종합평가 카드 (y=1095~1215) ────────────────────────────────
     _draw_card_on_overlay(draw, PAD, 1095, WIDTH - PAD * 2, 120)
-    draw.text((PAD + 20, 1107), "📋 종합평가", font=font_label, fill=COLOR_ACCENT)
+    draw.text((PAD + 20, 1107), "종합평가", font=font_label, fill=COLOR_ACCENT)
     summary = _build_summary(report)
     draw.text((PAD + 20, 1140), summary, font=font_body, fill=COLOR_WHITE)
 

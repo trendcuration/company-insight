@@ -14,11 +14,13 @@ DART_BASE = "https://opendart.fss.or.kr/api"
 DATA_DIR = Path(__file__).parent.parent.parent / "data"
 CORP_XML_PATH = DATA_DIR / "CORPCODE.xml"
 
-# One API call returns three years via thstrm/frmtrm/bfefrmtrm fields
-ACCOUNT_IDS = {
-    "revenue": "ifrs-full_Revenue",
-    "operating_income": "ifrs-full_OperatingIncomeLoss",
-    "net_income": "ifrs-full_ProfitLoss",
+# One API call returns three years via thstrm/frmtrm/bfefrmtrm fields.
+# fnlttSinglAcnt 응답에는 account_id가 없고 account_nm(계정명)만 있다
+# (account_id는 fnlttSinglAcntAll 전용). 손익계산서(IS/CIS) 계정명으로 매칭한다.
+ACCOUNT_NAMES = {
+    "revenue": "매출액",
+    "operating_income": "영업이익",
+    "net_income": "당기순이익",
 }
 
 
@@ -82,20 +84,31 @@ async def get_financial_data(corp_code: str) -> List[FinancialYear]:
                 resp = await client.get(f"{DART_BASE}/fnlttSinglAcnt.json", params=params)
                 data = resp.json()
                 if data.get("status") == "000" and data.get("list"):
-                    items = {row["account_id"]: row for row in data["list"]}
-                    return _parse_three_years(items)
+                    result = _parse_three_years(data["list"])
+                    if result:
+                        return result
     except Exception:
         pass
     return []
 
 
-def _parse_three_years(items: dict) -> List[FinancialYear]:
-    def _val(account_id: str, field: str) -> Optional[float]:
-        row = items.get(account_id)
+def _parse_three_years(rows: list) -> List[FinancialYear]:
+    # 손익계산서 행만, 계정명 기준 매칭. 같은 계정명이 연결/포괄 등으로
+    # 중복될 수 있어 첫 번째(정렬 우선) 행을 사용한다.
+    items: dict = {}
+    for row in rows:
+        if row.get("sj_div") not in ("IS", "CIS"):
+            continue
+        name = (row.get("account_nm") or "").strip()
+        if name not in items:
+            items[name] = row
+
+    def _val(account_nm: str, field: str) -> Optional[float]:
+        row = items.get(account_nm)
         if not row:
             return None
         try:
-            raw = row.get(field, "").replace(",", "").strip()
+            raw = str(row.get(field, "")).replace(",", "").strip()
             return float(raw) / 1e8 if raw and raw not in ("-", "") else None
         except Exception:
             return None
@@ -103,21 +116,21 @@ def _parse_three_years(items: dict) -> List[FinancialYear]:
     years = [
         FinancialYear(
             year=2024,
-            revenue=_val(ACCOUNT_IDS["revenue"], "thstrm_amount"),
-            operating_income=_val(ACCOUNT_IDS["operating_income"], "thstrm_amount"),
-            net_income=_val(ACCOUNT_IDS["net_income"], "thstrm_amount"),
+            revenue=_val(ACCOUNT_NAMES["revenue"], "thstrm_amount"),
+            operating_income=_val(ACCOUNT_NAMES["operating_income"], "thstrm_amount"),
+            net_income=_val(ACCOUNT_NAMES["net_income"], "thstrm_amount"),
         ),
         FinancialYear(
             year=2023,
-            revenue=_val(ACCOUNT_IDS["revenue"], "frmtrm_amount"),
-            operating_income=_val(ACCOUNT_IDS["operating_income"], "frmtrm_amount"),
-            net_income=_val(ACCOUNT_IDS["net_income"], "frmtrm_amount"),
+            revenue=_val(ACCOUNT_NAMES["revenue"], "frmtrm_amount"),
+            operating_income=_val(ACCOUNT_NAMES["operating_income"], "frmtrm_amount"),
+            net_income=_val(ACCOUNT_NAMES["net_income"], "frmtrm_amount"),
         ),
         FinancialYear(
             year=2022,
-            revenue=_val(ACCOUNT_IDS["revenue"], "bfefrmtrm_amount"),
-            operating_income=_val(ACCOUNT_IDS["operating_income"], "bfefrmtrm_amount"),
-            net_income=_val(ACCOUNT_IDS["net_income"], "bfefrmtrm_amount"),
+            revenue=_val(ACCOUNT_NAMES["revenue"], "bfefrmtrm_amount"),
+            operating_income=_val(ACCOUNT_NAMES["operating_income"], "bfefrmtrm_amount"),
+            net_income=_val(ACCOUNT_NAMES["net_income"], "bfefrmtrm_amount"),
         ),
     ]
     # Return only years with at least one non-None value
@@ -138,11 +151,11 @@ async def get_dividend_info(corp_code: str) -> Optional[DividendInfo]:
         if data.get("status") != "000" or not data.get("list"):
             return None
 
-        # se 표기는 연도별로 공백이 달라 정규화해 매칭한다.
+        # se 표기는 연도별로 공백·"(연결)" 접두어가 달라 정규화해 매칭한다.
         # 종류(stock_knd)가 있는 항목은 보통주 우선, 없는 항목(배당성향 등)은 그대로 수용.
         rows: dict = {}
         for row in data["list"]:
-            se = row.get("se", "").replace(" ", "")
+            se = row.get("se", "").replace(" ", "").replace("(연결)", "")
             knd = (row.get("stock_knd") or "").strip()
             if se not in rows or "보통" in knd:
                 rows[se] = row
