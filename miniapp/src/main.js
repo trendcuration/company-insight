@@ -16,11 +16,7 @@ const loading = document.getElementById('loading');
 const errorBox = document.getElementById('error-box');
 const errorMsg = document.getElementById('error-msg');
 const resultSection = document.getElementById('result-section');
-const resultTitle = document.getElementById('result-title');
-const resultImg = document.getElementById('result-img');
-const downloadBtn = document.getElementById('download-btn');
-
-let currentObjectUrl = null;
+const reportEl = document.getElementById('report');
 
 function show(el) { el.classList.remove('hidden'); }
 function hide(el) { el.classList.add('hidden'); }
@@ -37,13 +33,132 @@ function showError(msg) {
   hide(resultSection);
 }
 
-function showResult(url, name) {
-  if (currentObjectUrl) URL.revokeObjectURL(currentObjectUrl);
-  currentObjectUrl = url;
-  resultImg.src = url;
-  resultTitle.textContent = `${name} 인포그래픽 리포트`;
-  downloadBtn.href = url;
-  downloadBtn.download = `${name}_company_insight.png`;
+// ── 포맷 헬퍼 ─────────────────────────────────────────────────────
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({
+  '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+}[c]));
+
+function fmtEok(v) {
+  if (v == null) return 'N/A';
+  if (Math.abs(v) >= 10000) return `${(v / 10000).toFixed(1)}조`;
+  return `${Math.round(v).toLocaleString('ko-KR')}억`;
+}
+
+function fmtWon(v) {
+  return v == null ? 'N/A' : `${v.toLocaleString('ko-KR')}원`;
+}
+
+const signClass = (v) => (v == null ? '' : v >= 0 ? 'up' : 'down');
+
+// ── 리포트 HTML 렌더링 ────────────────────────────────────────────
+function renderReport(data) {
+  const si = data.stock_info;
+  const parts = [];
+
+  // 헤더
+  parts.push(`
+    <div class="rp-head">
+      <h2>${esc(data.company_name)}${data.stock_code ? ` <span class="rp-code">[${esc(data.stock_code)}]</span>` : ''}</h2>
+    </div>
+  `);
+
+  // 현재 주가
+  if (si && si.current_price != null) {
+    const chg = si.price_change;
+    const chgHtml = chg != null
+      ? `<span class="rp-change ${signClass(chg)}">${chg >= 0 ? '▲' : '▼'} ${Math.abs(chg).toFixed(2)}%</span>`
+      : '';
+    const meta = [
+      si.market_cap ? `시총 ${esc(si.market_cap)}` : null,
+      si.per != null ? `PER ${si.per.toFixed(1)}x` : null,
+      si.pbr != null ? `PBR ${si.pbr.toFixed(1)}x` : null,
+    ].filter(Boolean).join('  ·  ');
+    parts.push(`
+      <div class="rp-card">
+        <div class="rp-label">현재 주가</div>
+        <div class="rp-price ${signClass(chg)}">${fmtWon(si.current_price)} ${chgHtml}</div>
+        ${meta ? `<div class="rp-meta">${meta}</div>` : ''}
+      </div>
+    `);
+  }
+
+  // 재무제표
+  if (data.financials && data.financials.length) {
+    const rows = [...data.financials]
+      .sort((a, b) => a.year - b.year)
+      .map((f) => `
+        <tr>
+          <td>${f.year}</td>
+          <td>${fmtEok(f.revenue)}</td>
+          <td class="${signClass(f.operating_income)}">${fmtEok(f.operating_income)}</td>
+          <td class="${signClass(f.net_income)}">${fmtEok(f.net_income)}</td>
+        </tr>
+      `).join('');
+    parts.push(`
+      <div class="rp-card">
+        <div class="rp-label">💰 재무제표 <small>(단위: 억원)</small></div>
+        <table class="rp-table">
+          <thead><tr><th>연도</th><th>매출액</th><th>영업이익</th><th>순이익</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    `);
+  }
+
+  // 배당
+  const dv = data.dividend;
+  if (dv && (dv.dps != null || dv.payout_ratio != null || dv.dividend_yield != null)) {
+    parts.push(`
+      <div class="rp-card">
+        <div class="rp-label">📈 배당 정보</div>
+        <div class="rp-stats">
+          <div class="rp-stat"><span>주당배당금</span><strong>${dv.dps != null ? fmtWon(dv.dps) : 'N/A'}</strong></div>
+          <div class="rp-stat"><span>배당성향</span><strong>${dv.payout_ratio != null ? dv.payout_ratio.toFixed(1) + '%' : 'N/A'}</strong></div>
+          <div class="rp-stat"><span>시가배당률</span><strong>${dv.dividend_yield != null ? dv.dividend_yield.toFixed(2) + '%' : 'N/A'}</strong></div>
+        </div>
+      </div>
+    `);
+  }
+
+  // 증권가 전망
+  const con = data.consensus;
+  if (con && con.target_avg != null) {
+    const range = con.target_high != null && con.target_low != null
+      ? `<div class="rp-meta">최고 ${fmtWon(con.target_high)}  /  최저 ${fmtWon(con.target_low)}</div>`
+      : '';
+    const upside = si && si.current_price
+      ? `<div class="rp-meta">현재가 대비 <strong class="${signClass(con.target_avg - si.current_price)}">${(((con.target_avg / si.current_price) - 1) * 100).toFixed(1)}%</strong></div>`
+      : '';
+    let opinions = '';
+    if (con.buy_count != null || con.neutral_count != null || con.sell_count != null) {
+      opinions = `
+        <div class="rp-opinions">
+          <span class="op buy">매수 ${con.buy_count ?? 0}</span>
+          <span class="op neutral">중립 ${con.neutral_count ?? 0}</span>
+          <span class="op sell">매도 ${con.sell_count ?? 0}</span>
+        </div>`;
+    }
+    parts.push(`
+      <div class="rp-card">
+        <div class="rp-label">🔮 증권가 전망</div>
+        <div class="rp-target">목표주가 평균 <strong>${fmtWon(con.target_avg)}</strong></div>
+        ${range}${upside}${opinions}
+      </div>
+    `);
+  }
+
+  // 데이터가 주가 외에 하나도 없을 때 안내
+  if (parts.length <= 2 && !(si && si.current_price != null)) {
+    parts.push(`<div class="rp-card"><div class="rp-meta">수집된 데이터가 없습니다.</div></div>`);
+  }
+
+  parts.push(`
+    <div class="rp-footer">
+      데이터 출처: DART Open API, 네이버 금융 · 투자 판단의 책임은 본인에게 있습니다
+    </div>
+  `);
+
+  reportEl.innerHTML = parts.join('');
   hide(loading);
   hide(errorBox);
   show(resultSection);
@@ -117,13 +232,12 @@ form.addEventListener('submit', async (e) => {
   try {
     // 리포트 요청과 전면광고를 동시에 진행 — 광고가 끝나면 결과 표시
     const [response] = await Promise.all([
-      fetch(`${API_BASE_URL}/api/report/${encodeURIComponent(name)}`, { method: 'POST' }),
+      fetch(`${API_BASE_URL}/api/data/${encodeURIComponent(name)}`),
       runInterstitialAd(),
     ]);
 
     if (response.ok) {
-      const blob = await response.blob();
-      showResult(URL.createObjectURL(blob), name);
+      renderReport(await response.json());
     } else {
       let detail = '서버 오류가 발생했습니다.';
       try {

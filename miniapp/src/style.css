@@ -244,3 +244,76 @@ body {
   .input-wrap { flex-direction: column; }
   .input-wrap button { width: 100%; }
 }
+
+/* ── HTML 리포트 ─────────────────────────────── */
+.report { display: flex; flex-direction: column; gap: 14px; }
+
+.rp-head h2 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.rp-code { color: var(--muted); font-size: 1rem; font-weight: 400; }
+
+.rp-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 18px 20px;
+}
+
+.rp-label {
+  font-size: 0.85rem;
+  color: var(--accent);
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+
+.rp-label small { color: var(--muted); font-weight: 400; }
+
+.rp-price {
+  font-size: 1.9rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.rp-price.up, .up { color: var(--green); }
+.rp-price.down, .down { color: var(--red); }
+
+.rp-change { font-size: 1rem; margin-left: 8px; }
+
+.rp-meta { color: var(--muted); font-size: 0.85rem; margin-top: 8px; }
+
+.rp-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+.rp-table th {
+  text-align: left; color: var(--muted); font-weight: 500;
+  padding: 6px 4px; border-bottom: 1px solid var(--border);
+}
+.rp-table td { padding: 9px 4px; border-bottom: 1px solid rgba(42,42,74,0.5); }
+.rp-table tr:last-child td { border-bottom: none; }
+
+.rp-stats { display: flex; gap: 12px; flex-wrap: wrap; }
+.rp-stat {
+  flex: 1; min-width: 90px;
+  display: flex; flex-direction: column; gap: 4px;
+}
+.rp-stat span { font-size: 0.78rem; color: var(--muted); }
+.rp-stat strong { font-size: 1.05rem; color: #f1c40f; }
+
+.rp-target { font-size: 1.05rem; }
+.rp-target strong { font-size: 1.2rem; }
+
+.rp-opinions { display: flex; gap: 8px; margin-top: 10px; }
+.op {
+  font-size: 0.8rem; padding: 4px 10px; border-radius: 20px;
+  border: 1px solid var(--border);
+}
+.op.buy { color: var(--green); border-color: rgba(39,174,96,0.4); }
+.op.neutral { color: var(--muted); }
+.op.sell { color: var(--red); border-color: rgba(231,76,60,0.4); }
+
+.rp-footer {
+  text-align: center; color: var(--muted);
+  font-size: 0.75rem; opacity: 0.7; padding: 8px 0 4px;
+}
