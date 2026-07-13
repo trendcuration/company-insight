@@ -36,8 +36,54 @@
     </section>
 
     <div id="loading" class="loading hidden">
-      <div class="spinner"></div>
-      <p>분석 중입니다… 데이터를 수집하고 있습니다</p>
+      <div class="loading-head">
+        <div class="spinner"></div>
+        <p>분석 중입니다… 데이터를 수집하고 있습니다</p>
+      </div>
+
+      <div class="skeleton" aria-hidden="true">
+        <span class="skeleton-tag">이런 화면이 만들어져요</span>
+
+        <div class="sk-card">
+          <div class="sk-bar sk-label"></div>
+          <div class="sk-bar sk-price"></div>
+          <div class="sk-grid">
+            <div class="sk-bar sk-kv"></div>
+            <div class="sk-bar sk-kv"></div>
+            <div class="sk-bar sk-kv"></div>
+            <div class="sk-bar sk-kv"></div>
+            <div class="sk-bar sk-kv"></div>
+            <div class="sk-bar sk-kv"></div>
+          </div>
+          <div class="sk-bar sk-range"></div>
+        </div>
+
+        <div class="sk-card">
+          <div class="sk-bar sk-label"></div>
+          <div class="sk-row"><span class="sk-bar sk-cell"></span><span class="sk-bar sk-cell"></span><span class="sk-bar sk-cell"></span><span class="sk-bar sk-cell"></span></div>
+          <div class="sk-row"><span class="sk-bar sk-cell"></span><span class="sk-bar sk-cell"></span><span class="sk-bar sk-cell"></span><span class="sk-bar sk-cell"></span></div>
+          <div class="sk-row"><span class="sk-bar sk-cell"></span><span class="sk-bar sk-cell"></span><span class="sk-bar sk-cell"></span><span class="sk-bar sk-cell"></span></div>
+        </div>
+
+        <div class="sk-card">
+          <div class="sk-bar sk-label"></div>
+          <div class="sk-stats">
+            <div class="sk-bar sk-stat"></div>
+            <div class="sk-bar sk-stat"></div>
+            <div class="sk-bar sk-stat"></div>
+          </div>
+        </div>
+
+        <div class="sk-card">
+          <div class="sk-bar sk-label"></div>
+          <div class="sk-bar sk-target"></div>
+          <div class="sk-pills">
+            <span class="sk-bar sk-pill"></span>
+            <span class="sk-bar sk-pill"></span>
+            <span class="sk-bar sk-pill"></span>
+          </div>
+        </div>
+      </div>
     </div>
 
     <div id="error-box" class="error-box hidden">
