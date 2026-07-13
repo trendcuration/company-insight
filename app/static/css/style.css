@@ -180,8 +180,7 @@ body {
   100% { background-position: 0 50%; }
 }
 
-.sk-label { width: 70px; height: 12px; margin-bottom: 12px; }
-.sk-price { width: 45%; height: 30px; margin-bottom: 14px; }
+.sk-price { width: 45%; height: 30px; margin-bottom: 14px; margin-top: 2px; }
 
 .sk-grid {
   display: grid;
