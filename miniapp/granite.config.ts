@@ -3,7 +3,7 @@ import { defineConfig } from '@apps-in-toss/web-framework/config';
 export default defineConfig({
   appName: 'company-insight',
   brand: {
-    displayName: '기업정보',
+    displayName: '투자기업 정보조회',
     primaryColor: '#3498DB',
     icon: 'https://static.toss.im/appsintoss/21275/ea0d96fc-638a-448f-ab14-137cd86f5bcf.png',
   },
