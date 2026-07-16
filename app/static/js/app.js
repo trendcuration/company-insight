@@ -50,6 +50,47 @@ function fmtWon(v) {
 
 const signClass = (v) => (v == null ? '' : v >= 0 ? 'up' : 'down');
 
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// ── 로딩 중 명언 로테이션 ─────────────────────────────────────────
+const QUOTES = [
+  { text: '남들이 탐욕스러울 때 두려워하고, 남들이 두려워할 때 탐욕스러워라.', who: '워런 버핏' },
+  { text: '시장은 단기적으로는 투표 기계지만, 장기적으로는 저울이다.', who: '벤저민 그레이엄' },
+  { text: '자신이 무엇을 소유하고 있는지, 왜 소유하는지 알아야 한다.', who: '피터 린치' },
+  { text: '우량주를 사고 수면제를 먹어라. 10년 뒤 부자가 되어 있을 것이다.', who: '앙드레 코스톨라니' },
+  { text: '강세장은 비관 속에서 태어나 회의 속에서 자라고, 낙관 속에서 성숙하며 행복 속에서 죽는다.', who: '존 템플턴' },
+  { text: '큰돈은 사고파는 것이 아니라 기다림에서 나온다.', who: '찰리 멍거' },
+  { text: '시장은 결코 틀리지 않는다. 틀리는 것은 사람의 의견이다.', who: '제시 리버모어' },
+  { text: '맞느냐 틀리느냐가 아니라, 맞았을 때 얼마를 벌고 틀렸을 때 얼마를 잃느냐가 중요하다.', who: '조지 소로스' },
+  { text: '고통에 성찰이 더해지면 발전이 된다.', who: '레이 달리오' },
+  { text: '위대한 기업을 적당한 가격에 사는 것이, 적당한 기업을 위대한 가격에 사는 것보다 낫다.', who: '워런 버핏' },
+];
+
+let quoteTimer = null;
+
+function startQuotes() {
+  const box = document.getElementById('quote-box');
+  if (!box) return;
+  let i = Math.floor(Math.random() * QUOTES.length);
+  const renderQuote = () => {
+    const q = QUOTES[i];
+    box.classList.remove('quote-in');
+    void box.offsetWidth; // 애니메이션 재시작 트리거
+    box.innerHTML = `<p class="quote-text">“${esc(q.text)}”</p><p class="quote-who">— ${esc(q.who)}</p>`;
+    box.classList.add('quote-in');
+    i = (i + 1) % QUOTES.length;
+  };
+  renderQuote();
+  quoteTimer = setInterval(renderQuote, 2000);
+}
+
+function stopQuotes() {
+  if (quoteTimer) {
+    clearInterval(quoteTimer);
+    quoteTimer = null;
+  }
+}
+
 // ── 리포트 HTML 렌더링 ────────────────────────────────────────────
 function renderReport(data) {
   const si = data.stock_info;
@@ -244,12 +285,23 @@ form.addEventListener('submit', async (e) => {
   hide(resultSection);
   show(loading);
   setLoading(true);
+  startQuotes();
 
   try {
-    const response = await fetch(`${API_BASE_URL}/api/data/${encodeURIComponent(name)}`);
+    // 데이터를 먼저 모두 받아온 뒤 — 광고 없이 실패하면 바로 오류 표시.
+    // 성공했을 때만 2초 뒤 전면광고를 띄우고, 광고가 끝나면 결과를 보여준다.
+    // 서버 콜드스타트 대비 90초 타임아웃.
+    const controller = new AbortController();
+    const fetchTimeout = setTimeout(() => controller.abort(), 90000);
+    const response = await fetch(
+      `${API_BASE_URL}/api/data/${encodeURIComponent(name)}`,
+      { signal: controller.signal }
+    );
+    clearTimeout(fetchTimeout);
 
     if (response.ok) {
-      renderReport(await response.json());
+      const data = await response.json();
+      renderReport(data);
     } else {
       let detail = '서버 오류가 발생했습니다.';
       try {
@@ -258,9 +310,12 @@ form.addEventListener('submit', async (e) => {
       } catch {}
       showError(detail);
     }
-  } catch {
-    showError('네트워크 오류가 발생했습니다. 잠시 후 다시 시도해주세요.');
+  } catch (err) {
+    showError(err && err.name === 'AbortError'
+      ? '서버 응답이 지연되고 있습니다. 잠시 후 다시 시도해주세요.'
+      : '네트워크 오류가 발생했습니다. 잠시 후 다시 시도해주세요.');
   } finally {
+    stopQuotes();
     setLoading(false);
   }
 });

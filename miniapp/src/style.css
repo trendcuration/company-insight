@@ -141,6 +141,33 @@ body {
 
 .loading-head p { color: var(--muted); font-size: 0.9rem; }
 
+
+/* 로딩 중 명언 */
+.quote-box {
+  max-width: 440px;
+  margin: 18px auto 0;
+  min-height: 76px;
+  padding: 0 12px;
+}
+.quote-in { animation: quote-fade 0.45s ease; }
+@keyframes quote-fade {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.quote-text {
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: var(--text-sub);
+  line-height: 1.55;
+  word-break: keep-all;
+}
+.quote-who {
+  margin-top: 6px;
+  font-size: 0.78rem;
+  color: var(--blue);
+  font-weight: 700;
+}
+
 /* ── 로딩 중 스켈레톤 미리보기 ─────────────────── */
 .skeleton {
   display: flex;
