@@ -407,3 +407,45 @@ a.rp-news-item:active .rp-news-title { color: var(--blue); }
 
 /* ── Utilities ───────────────────────────────── */
 .hidden { display: none !important; }
+
+/* ─── 빠른 선택 칩 (많이 찾는 기업 / 최근 조회) ───────────────── */
+.chips-wrap { margin-top: 14px; }
+.chips-label { margin: 0 0 8px; font-size: 0.78rem; font-weight: 600; color: var(--muted); }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip {
+  border: 1px solid var(--line, #e5e8eb);
+  background: #fff;
+  color: var(--text, #191f28);
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-size: 0.88rem;
+  font-family: inherit;
+  cursor: pointer;
+}
+.chip:active { background: #f2f4f6; }
+.chip:disabled { opacity: 0.5; cursor: default; }
+
+/* ─── 전면광고 사전 안내 ─────────────────────────────────────── */
+.ad-notice {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 24px;
+  text-align: center;
+  background: #f2f4f6;
+}
+.ad-notice-badge {
+  font-size: 11px;
+  font-weight: 700;
+  color: #8b95a1;
+  background: #e5e8eb;
+  padding: 2px 8px;
+  border-radius: 6px;
+}
+.ad-notice-title { margin: 0; font-size: 1.1rem; font-weight: 800; letter-spacing: -0.3px; color: #191f28; }
+.ad-notice-sub { margin: 0; font-size: 0.9rem; color: #4e5968; }

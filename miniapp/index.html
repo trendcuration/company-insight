@@ -3,13 +3,13 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <title>Company Insight — 기업인사이트</title>
+  <title>투자기업 정보조회</title>
 </head>
 <body>
   <header class="site-header">
     <div class="header-inner">
-      <span class="logo">📊 Company Insight</span>
-      <span class="tagline">기업 분석 리포트 생성기</span>
+      <span class="logo">📊 투자기업 정보조회</span>
+      <span class="tagline">공시·주가·증권가 전망을 한눈에</span>
     </div>
   </header>
 
@@ -32,6 +32,15 @@
           <button type="submit" id="submit-btn">리포트 생성</button>
         </div>
       </form>
+
+      <div class="chips-wrap">
+        <p class="chips-label">많이 찾는 기업</p>
+        <div id="quick-chips" class="chips"></div>
+      </div>
+      <div id="recent-wrap" class="chips-wrap hidden">
+        <p class="chips-label">최근 조회</p>
+        <div id="recent-chips" class="chips"></div>
+      </div>
     </section>
 
     <div id="loading" class="loading hidden">
@@ -100,6 +109,13 @@
     <p>Company Insight by <strong>TRENQURA</strong></p>
     <p class="footer-sub">데이터 출처: DART Open API, 네이버 금융 · 투자 판단의 책임은 본인에게 있습니다</p>
   </footer>
+
+  <div id="ad-notice" class="ad-notice hidden" role="status" aria-live="polite">
+    <div class="spinner" aria-hidden="true"></div>
+    <span class="ad-notice-badge">광고</span>
+    <p class="ad-notice-title">리포트를 보기 전, 잠깐 광고가 나와요</p>
+    <p class="ad-notice-sub">광고가 끝나면 바로 결과를 보여드릴게요</p>
+  </div>
 
   <script type="module" src="/src/main.js"></script>
 </body>

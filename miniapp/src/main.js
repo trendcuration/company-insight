@@ -1,5 +1,5 @@
 import './style.css';
-import { loadFullScreenAd, showFullScreenAd } from '@apps-in-toss/web-framework';
+import { loadFullScreenAd, showFullScreenAd, openURL } from '@apps-in-toss/web-framework';
 
 // ── 설정 ─────────────────────────────────────────────────────────
 // 백엔드(FastAPI) 배포 주소. 빌드 시 VITE_API_BASE_URL 환경변수로 지정.
@@ -248,7 +248,7 @@ function renderReport(data) {
         <div class="rp-news-title">${esc(n.title)}</div>
         ${meta ? `<div class="rp-news-meta">${esc(meta)}</div>` : ''}`;
       return n.url
-        ? `<a class="rp-news-item" href="${esc(n.url)}" target="_blank" rel="noopener">${inner}</a>`
+        ? `<a class="rp-news-item" href="${esc(n.url)}" data-news-url="${esc(n.url)}">${inner}</a>`
         : `<div class="rp-news-item">${inner}</div>`;
     }).join('');
     parts.push(`
@@ -275,64 +275,183 @@ function renderReport(data) {
   show(resultSection);
 }
 
-// ── 전면광고 ──────────────────────────────────────────────────────
-// 데이터 수신이 끝난 뒤에만 호출한다 (조회 중에 광고부터 뜨면 안 됨).
-// 광고 종료(dismissed) 후 결과를 보여준다. 토스 앱 밖(일반 브라우저)이나
-// 광고 실패 시에는 광고 없이 바로 결과를 보여준다 (앱 중단 금지).
-function runInterstitialAd() {
-  return new Promise((resolve) => {
-    let settled = false;
-    const done = () => {
-      if (!settled) {
-        settled = true;
-        resolve();
-      }
-    };
-    // 광고가 10초 안에 못 뜨면 결과 표시를 막지 않는다
-    const timeout = setTimeout(done, 10000);
-
-    try {
-      loadFullScreenAd({
-        options: { adGroupId: AD_GROUP_ID },
-        onEvent: (event) => {
-          if (event.type === 'loaded') {
-            try {
-              showFullScreenAd({
-                options: { adGroupId: AD_GROUP_ID },
-                onEvent: (showEvent) => {
-                  if (showEvent.type === 'dismissed' || showEvent.type === 'failedToShow') {
-                    clearTimeout(timeout);
-                    done();
-                  }
-                },
-                onError: () => {
-                  clearTimeout(timeout);
-                  done();
-                },
-              });
-            } catch {
-              clearTimeout(timeout);
-              done();
-            }
-          }
-        },
-        onError: () => {
-          clearTimeout(timeout);
-          done();
-        },
-      });
-    } catch {
-      // 토스 앱 밖(일반 브라우저)에서는 SDK 브릿지가 없어 예외 발생 — 광고 생략
-      clearTimeout(timeout);
-      done();
-    }
-  });
+// ── 로깅 (전환/재방문 지표용) ─────────────────────────────────────
+// 실패해도 앱 동작을 막지 않는다.
+function logEvent(kind, logName, params = {}) {
+  import('@apps-in-toss/web-framework')
+    .then(({ Analytics }) => Analytics[kind]({ log_name: logName, ...params }))
+    .catch(() => {});
 }
 
-// ── 리포트 생성 ───────────────────────────────────────────────────
-form.addEventListener('submit', async (e) => {
+// ── 외부 링크(뉴스) ─────────────────────────────────────────────
+// 앱 웹뷰 안에서 열리지 않도록 openURL로 기본 브라우저를 연다. 실패하면 window.open으로 폴백.
+reportEl.addEventListener('click', (e) => {
+  const link = e.target.closest('[data-news-url]');
+  if (!link) return;
   e.preventDefault();
-  const name = input.value.trim();
+  const url = link.getAttribute('data-news-url');
+  logEvent('click', 'news_click');
+  Promise.resolve()
+    .then(() => openURL(url))
+    .catch(() => window.open(url, '_blank', 'noopener,noreferrer'));
+});
+
+// ── 전면광고 ──────────────────────────────────────────────────────
+// 순서: 데이터 수신 → "광고가 나와요" 안내 → 전면광고(닫힘/실패까지 대기) → 결과.
+// (앱인토스 UX 원칙: 유저가 예상하기 어려운 시점에 광고가 뜨면 안 됨.)
+// 앱 진입 시 미리 로드해 두고, 노출 후엔 다음을 위해 다시 로드한다.
+// 토스 앱 밖(일반 브라우저)이나 광고 미지원/실패 시에는 안내·광고 없이 바로 결과를 보여준다.
+const AD_MIN_GAP_MS = 60_000;      // 광고 사이 최소 간격
+const AD_NOTICE_MIN_MS = 1200;     // 안내를 읽을 최소 시간
+const AD_LOAD_TIMEOUT_MS = 5000;   // 로드 대기 한도(넘기면 이번엔 광고 없이 진행)
+const AD_SHOW_SAFETY_MS = 90_000;  // 노출 중 이벤트가 안 오는 최악의 경우 대비
+
+let lastAdAt = 0;
+let adLoaded = false;
+let adLoading = false;
+let adWaiters = [];
+
+function flushAdWaiters() {
+  const pending = adWaiters;
+  adWaiters = [];
+  pending.forEach((cb) => cb());
+}
+
+function adSupported() {
+  try {
+    return loadFullScreenAd.isSupported() && showFullScreenAd.isSupported();
+  } catch {
+    return false;
+  }
+}
+
+function shouldShowAd() {
+  return adSupported() && Date.now() - lastAdAt >= AD_MIN_GAP_MS;
+}
+
+function startAdLoad() {
+  if (adLoaded || adLoading || !adSupported()) return;
+  adLoading = true;
+  try {
+    loadFullScreenAd({
+      options: { adGroupId: AD_GROUP_ID },
+      onEvent: (event) => {
+        if (event.type !== 'loaded') return;
+        adLoading = false;
+        adLoaded = true;
+        flushAdWaiters();
+      },
+      onError: () => {
+        adLoading = false;
+        flushAdWaiters();
+      },
+    });
+  } catch {
+    adLoading = false;
+    flushAdWaiters();
+  }
+}
+
+// 광고를 보여주고 광고가 끝나면(닫힘/실패/로드 지연) resolve
+function runInterstitialAndWait() {
+  return new Promise((resolve) => {
+    let settled = false;
+    let safetyTimer;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(safetyTimer);
+      resolve();
+    };
+
+    const showNow = () => {
+      if (settled) return;
+      if (!adLoaded) return finish();
+      adLoaded = false; // 소모됨
+      safetyTimer = setTimeout(finish, AD_SHOW_SAFETY_MS);
+      try {
+        showFullScreenAd({
+          options: { adGroupId: AD_GROUP_ID },
+          onEvent: (e) => {
+            if (e.type === 'show' || e.type === 'impression') lastAdAt = Date.now();
+            if (e.type === 'dismissed' || e.type === 'failedToShow') finish();
+          },
+          onError: finish,
+        });
+      } catch {
+        finish();
+      }
+    };
+
+    if (adLoaded) return showNow();
+
+    const loadTimer = setTimeout(finish, AD_LOAD_TIMEOUT_MS);
+    adWaiters.push(() => {
+      clearTimeout(loadTimer);
+      showNow();
+    });
+    startAdLoad();
+    if (!adLoading && !adLoaded) finish(); // 로드를 시작하지 못한 경우
+  }).finally(() => startAdLoad()); // 다음 노출을 위해 다시 로드
+}
+
+// ── 백엔드 깨우기 ─────────────────────────────────────────────────
+// 무료 서버는 유휴 시 잠들어 첫 요청이 느리다. 사용자가 기업명을 입력하는 동안 미리 깨운다.
+function warmUpBackend() {
+  if (!API_BASE_URL) return;
+  fetch(`${API_BASE_URL}/`, { mode: 'no-cors' }).catch(() => {});
+}
+
+// ── 빠른 선택 칩 (많이 찾는 기업 / 최근 조회) ─────────────────────
+const POPULAR = ['삼성전자', 'SK하이닉스', '네이버', '카카오', '현대차', 'LG에너지솔루션'];
+const RECENT_KEY = 'company-insight:recent';
+
+function loadRecent() {
+  try {
+    const arr = JSON.parse(localStorage.getItem(RECENT_KEY) || '[]');
+    return Array.isArray(arr) ? arr.filter((v) => typeof v === 'string').slice(0, 5) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveRecent(name) {
+  try {
+    const next = [name, ...loadRecent().filter((v) => v !== name)].slice(0, 5);
+    localStorage.setItem(RECENT_KEY, JSON.stringify(next));
+  } catch {
+    /* 저장 불가 환경은 무시 */
+  }
+  renderRecent();
+}
+
+function chipHtml(name) {
+  return `<button type="button" class="chip" data-company="${esc(name)}">${esc(name)}</button>`;
+}
+
+function renderRecent() {
+  const recent = loadRecent();
+  const wrap = document.getElementById('recent-wrap');
+  document.getElementById('recent-chips').innerHTML = recent.map(chipHtml).join('');
+  if (recent.length) show(wrap); else hide(wrap);
+}
+
+document.getElementById('quick-chips').innerHTML = POPULAR.map(chipHtml).join('');
+renderRecent();
+document.querySelector('.search-section').addEventListener('click', (e) => {
+  const chip = e.target.closest('[data-company]');
+  if (!chip || btn.disabled) return;
+  const name = chip.getAttribute('data-company');
+  input.value = name;
+  logEvent('click', 'company_chip_click');
+  runSearch(name);
+});
+
+// ── 리포트 생성 ───────────────────────────────────────────────────
+const adNoticeEl = document.getElementById('ad-notice');
+
+async function runSearch(rawName) {
+  const name = rawName.trim();
   if (!name) return;
 
   hide(errorBox);
@@ -342,8 +461,7 @@ form.addEventListener('submit', async (e) => {
   startQuotes();
 
   try {
-    // 데이터를 먼저 모두 받아온 뒤 — 광고 없이 실패하면 바로 오류 표시.
-    // 성공했을 때만 2초 뒤 전면광고를 띄우고, 광고가 끝나면 결과를 보여준다.
+    // 데이터를 먼저 모두 받아온 뒤 광고를 시도한다(조회 실패 시엔 광고 없이 바로 오류 표시).
     // 서버 콜드스타트 대비 90초 타임아웃.
     const controller = new AbortController();
     const fetchTimeout = setTimeout(() => controller.abort(), 90000);
@@ -355,9 +473,19 @@ form.addEventListener('submit', async (e) => {
 
     if (response.ok) {
       const data = await response.json();
-      await sleep(2000);
-      await runInterstitialAd();
+      if (shouldShowAd()) {
+        // 안내 → 광고(끝날 때까지 대기) → 결과
+        show(adNoticeEl);
+        try {
+          await sleep(AD_NOTICE_MIN_MS);
+          await runInterstitialAndWait();
+        } finally {
+          hide(adNoticeEl);
+        }
+      }
       renderReport(data);
+      saveRecent(name);
+      logEvent('impression', 'report_view', { company: name });
     } else {
       let detail = '서버 오류가 발생했습니다.';
       try {
@@ -374,4 +502,13 @@ form.addEventListener('submit', async (e) => {
     stopQuotes();
     setLoading(false);
   }
+}
+
+form.addEventListener('submit', (e) => {
+  e.preventDefault();
+  runSearch(input.value);
 });
+
+// 앱 진입 직후: 서버를 깨우고 전면광고를 미리 로드해 둔다.
+warmUpBackend();
+startAdLoad();
