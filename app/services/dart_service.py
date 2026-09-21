@@ -1,9 +1,8 @@
 from __future__ import annotations
-import io
+import json
+import logging
 import os
 from datetime import date
-import zipfile
-import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import List, Optional
 
@@ -13,7 +12,14 @@ from app.models.report import DividendInfo, FinancialYear
 
 DART_BASE = "https://opendart.fss.or.kr/api"
 DATA_DIR = Path(__file__).parent.parent.parent / "data"
-CORP_XML_PATH = DATA_DIR / "CORPCODE.xml"
+# 상장사만 담은 작은 색인(scripts/build_corp_index.py로 생성해 저장소에 포함).
+# 예전엔 30MB CORPCODE.xml을 런타임에 내려받고 요청마다 통째로 파싱해서, DART가 느리거나
+# 서버가 재시작된 직후 첫 요청이 수 분씩 걸리거나 메모리 부족으로 실패했다.
+CORP_INDEX_PATH = DATA_DIR / "corp_index.json"
+
+logger = logging.getLogger(__name__)
+_corp_index: Optional[dict] = None
+
 
 # One API call returns three years via thstrm/frmtrm/bfefrmtrm fields.
 # fnlttSinglAcnt 응답에는 account_id가 없고 account_nm(계정명)만 있다
@@ -32,41 +38,32 @@ def _get_api_key() -> Optional[str]:
     return os.getenv("DART_API_KEY") or None
 
 
-async def _download_corp_xml(api_key: str) -> None:
-    DATA_DIR.mkdir(exist_ok=True)
-    url = f"{DART_BASE}/corpCode.xml?crtfc_key={api_key}"
-    async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.get(url)
-        resp.raise_for_status()
-    with zipfile.ZipFile(io.BytesIO(resp.content)) as zf:
-        xml_bytes = zf.read(zf.namelist()[0])
-    CORP_XML_PATH.write_bytes(xml_bytes)
+def _load_corp_index() -> dict:
+    """상장사 색인(종목코드 → corp_code)을 한 번만 읽어 메모리에 둔다."""
+    global _corp_index
+    if _corp_index is None:
+        try:
+            _corp_index = json.loads(CORP_INDEX_PATH.read_text(encoding="utf-8")).get("by_stock", {})
+        except Exception:
+            logger.warning("corp_index.json을 읽지 못했습니다: %s", CORP_INDEX_PATH)
+            _corp_index = {}
+    return _corp_index
 
 
-async def get_corp_code(company_name: str) -> Optional[str]:
-    api_key = _get_api_key()
-    if not api_key:
+async def get_corp_code(company_name: str, stock_code: Optional[str] = None) -> Optional[str]:
+    """DART corp_code를 돌려준다. 종목코드가 있으면 그것으로 정확히 찾고, 없으면 상장사 이름으로 찾는다."""
+    if not _get_api_key():
         return None
-    try:
-        if not CORP_XML_PATH.exists():
-            await _download_corp_xml(api_key)
-        root = ET.parse(CORP_XML_PATH).getroot()
-        # Exact match first
-        for corp in root.findall("list"):
-            name_el = corp.find("corp_name")
-            code_el = corp.find("corp_code")
-            if name_el is not None and code_el is not None:
-                if name_el.text == company_name:
-                    return code_el.text
-        # Partial match fallback
-        for corp in root.findall("list"):
-            name_el = corp.find("corp_name")
-            code_el = corp.find("corp_code")
-            if name_el is not None and code_el is not None:
-                if name_el.text and company_name in name_el.text:
-                    return code_el.text
-    except Exception:
-        pass
+    index = _load_corp_index()
+    if stock_code and stock_code in index:
+        return index[stock_code]["corp_code"]
+    # 종목코드로 못 찾으면 이름 매칭(정확 일치 우선, 그다음 부분 일치)
+    for entry in index.values():
+        if entry["corp_name"] == company_name:
+            return entry["corp_code"]
+    for entry in index.values():
+        if company_name and company_name in entry["corp_name"]:
+            return entry["corp_code"]
     return None
 
 

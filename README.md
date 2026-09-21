@@ -63,3 +63,12 @@ company-insight/
 ├── requirements.txt
 └── README.md
 ```
+
+## DART 기업코드 색인 (data/corp_index.json)
+
+런타임에 30MB `CORPCODE.xml`을 내려받거나 파싱하지 않는다. 상장사(약 3,900곳)만 담은 `data/corp_index.json`을
+저장소에 포함해 두고 읽기만 한다. 신규 상장/사명 변경을 반영하려면 가끔 갱신한다:
+
+```bash
+DART_API_KEY=... python scripts/build_corp_index.py   # DART가 느리면 수 분 걸릴 수 있음
+```

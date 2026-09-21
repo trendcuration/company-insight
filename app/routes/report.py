@@ -22,25 +22,45 @@ async def _safe_return_none_div() -> Optional[DividendInfo]:
     return None
 
 
+# 데이터 소스(시세·재무·배당·컨센서스·뉴스)를 동시에 조회하는 전체 시간 예산(초).
+_DATA_BUDGET_SECONDS = 20
+
+
+async def _gather_with_budget(*coros):
+    """여러 소스를 동시에 조회하되, 실패했거나 예산 안에 못 끝낸 소스는 None으로 대체해 돌려준다."""
+    tasks = [asyncio.ensure_future(c) for c in coros]
+    done, pending = await asyncio.wait(tasks, timeout=_DATA_BUDGET_SECONDS)
+    for task in pending:
+        task.cancel()
+    results = []
+    for task in tasks:
+        if task in done and not task.cancelled() and task.exception() is None:
+            results.append(task.result())
+        else:
+            results.append(None)
+    return tuple(results)
+
+
 async def _collect_report(company_name: str) -> CompanyReport:
     stock_code = await get_stock_code(company_name)
     if not stock_code:
         raise HTTPException(status_code=400, detail="기업을 찾을 수 없습니다")
 
-    corp_code = await get_corp_code(company_name)
+    corp_code = await get_corp_code(company_name, stock_code)
 
     financials_coro = get_financial_data(corp_code) if corp_code else _safe_return_list()
     dividend_coro = get_dividend_info(corp_code) if corp_code else _safe_return_none_div()
 
-    try:
-        stock_info, financials, dividend, consensus, news = await asyncio.gather(
-            get_stock_info(stock_code),
-            financials_coro,
-            dividend_coro,
-            get_consensus(stock_code),
-            get_news(stock_code),
-        )
-    except Exception:
+    # 데이터 소스 하나가 실패하거나 느려도 나머지로 리포트를 보여준다.
+    results = await _gather_with_budget(
+        get_stock_info(stock_code),
+        financials_coro,
+        dividend_coro,
+        get_consensus(stock_code),
+        get_news(stock_code),
+    )
+    stock_info, financials, dividend, consensus, news = results
+    if stock_info is None and not financials and consensus is None and not news:
         raise HTTPException(status_code=502, detail="데이터 수집 중 오류가 발생했습니다")
 
     return CompanyReport(
